@@ -13,3 +13,8 @@ crash.*.log
 
 # Editor
 .obsidian/
+.trash/
+*.obsidian.vault
+
+# Working state / private notes (never public)
+CLAUDE.md
