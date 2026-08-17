@@ -1,0 +1,15 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+
+# macOS
+.DS_Store
+
+# Editor
+.obsidian/
