@@ -8,14 +8,14 @@ This repository contains the Infrastructure as Code (IaC) and architectural deci
 
 ```text
 Root
-├── Foundational OU
-│   ├── Log Archive        # Control Tower Managed
-│   └── Audit              # Control Tower Managed
+├── Security OU
+│   ├── LogArchive            # Control Tower Managed
+│   └── Aggregator account    # Control Tower Managed
 ├── Infrastructure OU
 │   ├── Shared Services
 │   └── Networking
-├── Sandbox OU             # Labs and experimentation
-├── Workloads OU           # Operational Environments
+├── Sandbox OU                # Labs and experimentation
+├── Workloads OU              # Operational Environments
 │   ├── Dev OU
 │   ├── Staging OU
 │   └── Prod OU
@@ -41,5 +41,8 @@ Root
 - [x] Root account secured with Multi-Factor Authentication (MFA)
 - [x] IAM user created with `AdministratorAccess`and MFA configured
 - [x] Programmatic credentials and local AWS CLI profile configured
-- [ ] ADR-001-OU-Structure Documented
-- [ ] AWS Control Tower Wizard run
+- [x] IAM user and role access to Billing information
+- [x] Billing Budgets & CloudWatch billing alarm
+- [x] ADR-001-OU-Structure Documented
+- [x] AWS Control Tower Wizard run
+- [x] ADR-002: Foundational Account and Parameters Documented

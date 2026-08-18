@@ -18,14 +18,14 @@ A dedicated **Policy Staging OU** which serves as a quarantine zone for testing 
 
 ```text
 Root
-├── Foundational OU
-│   ├── Log Archive        # Control Tower Managed
-│   └── Audit              # Control Tower Managed
+├── Security OU
+│   ├── LogArchive            # Control Tower Managed
+│   └── Aggregator account    # Control Tower Managed
 ├── Infrastructure OU
 │   ├── Shared Services
 │   └── Networking
-├── Sandbox OU             # Labs and experimentation
-├── Workloads OU           # Operational Environments
+├── Sandbox OU                # Labs and experimentation
+├── Workloads OU              # Operational Environments
 │   ├── Dev OU
 │   ├── Staging OU
 │   └── Prod OU
