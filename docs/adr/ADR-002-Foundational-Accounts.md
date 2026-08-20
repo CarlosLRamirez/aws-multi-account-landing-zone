@@ -18,11 +18,11 @@ During the first attempt to run the wizard, this step involved creating a new ac
 
 Next, you must enable AWS CloudTrail Centralized Logging, where you must similarly specify the account to be used for CloudTrail Administrator. This account cannot be the same one used in the previous step; it must be a separate account.
 
-In this step, the wizard was canceled to reevaluate the most appropriate names for each of these accounts. However, even though the wizard was canceled and Control Tower was not deployed on the first attempt, the AWS Organization was created, with the current account as the management account; the Audit account was also created within the Security OU.
+In this step, the wizard was canceled to reevaluate the most appropriate names for each of these accounts. However, even though the wizard was canceled and Control Tower was not deployed on the first attempt, the AWS Organization had already been created, with the current account as the management account; the Audit account had also been created within the Security OU.
 
-Search for the Audit account within the AWS Organization and delete it before attempting to deploy Control Tower again.
+The Audit account was located within the AWS Organization and deleted before attempting to deploy Control Tower again.
 
-In this new attempt, new accounts are assigned for both the Config service and CloudTrail; these are the `Aggregator account` and `LogArchive`, respectively.
+In this new attempt, new accounts were assigned for both the Config service and CloudTrail; these were the Aggregator account and LogArchive, respectively.
 
 ## Decision
 

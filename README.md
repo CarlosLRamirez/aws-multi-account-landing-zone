@@ -45,4 +45,6 @@ Root
 - [x] Billing Budgets & CloudWatch billing alarm
 - [x] ADR-001-OU-Structure Documented
 - [x] AWS Control Tower Wizard run
-- [x] ADR-002: Foundational Account and Parameters Documented
+- [x] ADR-002-Foundational Account and Parameters Documented
+- [>>] ADR-003-Guardrail-Strategy Documented
+- [ ] Custom Guardrails deployment via Terraform

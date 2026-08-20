@@ -18,3 +18,8 @@ crash.*.log
 
 # Working state / private notes (never public)
 CLAUDE.md
+
+# Evidence Folder
+docs/evidence/*
+
+
