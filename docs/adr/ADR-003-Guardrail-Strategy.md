@@ -1,3 +1,9 @@
+---
+title: Guardrail Strategy
+status: ready
+date: 2026-08-20
+---
+
 # ADR-003: Guardrail Strategy (Control Tower Controls vs. Custom SCPs)
 
 ## Status
@@ -8,107 +14,69 @@ Proposed
 
 Control Tower enabled **13 mandatory preventive controls** on the Security OU by default (verified via `list-enabled-controls`). All of them protect resources provisioned by Control Tower itself, like CloudTrail configuration, Config recording, Log Archive S3 bucket encryption/logging, and the supporting roles, Lambda functions, and SNS/CloudWatch resources that make the landing zone's own guardrails work:
 
+| No. | Control                                                                          | Protects                                                        |
+| --- | -------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 1   | Enable AWS Config in all available regions                                       | Config recorder can't be selectively disabled in a region       |
+| 2   | Disallow configuration changes to AWS Config                                     | Config recorder itself can't be reconfigured or disabled        |
+| 3   | Disallow changes to AWS Config Rules set up by Control Tower                     | Compliance rules CT deployed can't be weakened or deleted       |
+| 4   | Disallow modifications to AWS Config recorder S3 buckets managed by CT           | Where Config data lands can't be altered                        |
+| 5   | Disallow modifications to S3 buckets managed by CT                               | CloudTrail/Config log buckets broadly protected                 |
+| 6   | Disallow changes to CloudWatch set up by Control Tower                           | CT's compliance-monitoring alarms and dashboards protected      |
+| 7   | Disallow changes to CloudWatch Logs Log Groups                                   | Log groups holding the audit trail can't be tampered with       |
+| 8   | Disallow changes to Amazon SNS set up by Control Tower                           | CT's alert notification topics protected                        |
+| 9   | Disallow changes to Amazon SNS subscriptions set up by Control Tower             | Who receives those alerts can't be silently changed             |
+| 10  | Disallow changes to Amazon SNS subscriptions and topics managed by CT            | Broader variant covering both topics and subscriptions together |
+| 11  | Disallow changes to Lambda functions set up by Control Tower                     | Automation behind CT's guardrails can't be altered              |
+| 12  | Disallow changes to IAM roles set up by AWS Control Tower and AWS CloudFormation | Service roles CT depends on to function are protected           |
+| 13  | Deny access to AWS based on the requested Region (`AWS-GR_REGION_DENY`)          | Blocks API calls outside the landing zone's governed regions    |
 
-| No. | Control | Protects |
-|---|---|---|
-| 1 | Enable AWS Config in all available regions | Config recorder can't be selectively disabled in a region |
-| 2 | Disallow configuration changes to AWS Config | Config recorder itself can't be reconfigured or disabled |
-| 3 | Disallow changes to AWS Config Rules set up by Control Tower | Compliance rules CT deployed can't be weakened or deleted |
-| 4 | Disallow modifications to AWS Config recorder S3 buckets managed by CT | Where Config data lands can't be altered |
-| 5 | Disallow modifications to S3 buckets managed by CT | CloudTrail/Config log buckets broadly protected |
-| 6 | Disallow changes to CloudWatch set up by Control Tower | CT's compliance-monitoring alarms and dashboards protected |
-| 7 | Disallow changes to CloudWatch Logs Log Groups | Log groups holding the audit trail can't be tampered with |
-| 8 | Disallow changes to Amazon SNS set up by Control Tower | CT's alert notification topics protected |
-| 9 | Disallow changes to Amazon SNS subscriptions set up by Control Tower | Who receives those alerts can't be silently changed |
-| 10 | Disallow changes to Amazon SNS subscriptions and topics managed by CT | Broader variant covering both topics and subscriptions together |
-| 11 | Disallow changes to Lambda functions set up by Control Tower | Automation behind CT's guardrails can't be altered |
-| 12 | Disallow changes to IAM roles set up by AWS Control Tower and AWS CloudFormation | Service roles CT depends on to function are protected |
-| 13 | Deny access to AWS based on the requested Region (`AWS-GR_REGION_DENY`) | Blocks API calls outside the landing zone's governed regions |
-
-
-None of these govern actual user workloads deployed *on top of* the landing zone, we need to implement custom SCPs for that purpose.
+None of these govern actual user workloads deployed _on top of_ the landing zone. Custom SCPs are needed for that purpose.
 
 This landing zone is a personal lab and portfolio project, built to resemble a real enterprise environment rather than to host one. The SCPs proposed here reflect that: enterprise-grade governance criteria, kept intentionally minimal, and constrained to policies that cost $0 or effectively $0 to run.
 
-
 ## Decision
 
-Implement three custom SCPs via Terraform (`aws_organizations_policy`+ `aws_organizations_policy_attachment` resources), each targeting a specific OU based on where the risk it addresses actually applies.
+The decision is to apply three minimal but meaningful custom SCPs, each attached only to the OU where it's actually relevant.
 
-A fourth candidate — a region-restriction SCP — was considered and rejected: Control Tower's own mandatory control (`AWS-GR_REGION_DENY`,
-control #13 in this landing zone's baseline, see ADR-002) already
-enforces a region allowlist based on which regions are governed.
-A custom SCP attempting to widen that allowlist would have no effect
-— SCPs only add restriction, they can't override a mandatory deny —
-so the only real way to permit a new region (e.g. for a future DR
-lab) is to add it as a governed region in Control Tower itself, not
-to author a parallel SCP. See "Alternatives Considered" for the full
-reasoning.
+1. Restricted EC2 instance types (cost guardrail)
+2. Deny Transit Gateway creation
+3. Require mandatory resource tags
+
+A 4th SCP was considered early on, to restrict which regions could be used. That's no longer needed: Control Tower already has a control for this, `AWS-GR_REGION_DENY`, which only allows the regions it governs, so it already does what that SCP would have done. If a second region is ever needed in the future (for example, a DR lab), that region will simply be added to Control Tower's governed regions, or another solution will be found at that point.
 
 ### 1. Restricted EC2 instance types (cost guardrail)
 
 **Applies to:** Sandbox OU, Dev OU.
 
-**Denies:** `ec2:RunInstances` unless the requested instance type is
-in an approved list of low-cost types (e.g. `t3.micro`, `t3.small`,
-`t2.micro`).
+**Denies:** `ec2:RunInstances` unless the requested instance type is on an approved list of low-cost types (e.g. `t3.micro`, `t3.small`, `t2.micro`).
 
-**Why:** prevents an accidental expensive instance launch (a
-mistyped instance type, a copy-pasted example from documentation
-using a GPU or large memory-optimized instance) in low-stakes
-environments where there's no legitimate reason to need that
-capacity. Deliberately not applied to Prod OU — a production
-workload may have a real reason to need a larger instance type, and
-that decision belongs in that environment's own review process, not
-a blanket org-wide restriction.
+**Why:** stops an accidental expensive instance launch, like a typo in the instance type, or a copy-pasted example from documentation that uses a GPU or large memory-optimized instance in environments where there's no real reason to need that capacity. Prod OU doesn't get this restriction. A production workload might actually need a bigger instance, and that decision should go through Prod's own review process instead of a blanket org-wide rule.
 
 ### 2. Deny Transit Gateway creation
 
-**Applies to:** Sandbox OU, Dev OU.
+**Applies to:** Sandbox OU, Workloads OU.
 
-**Denies:** `ec2:CreateTransitGateway`,
-`ec2:CreateTransitGatewayVpcAttachment`.
+**Denies:** `ec2:CreateTransitGateway`, `ec2:CreateTransitGatewayVpcAttachment`.
 
-**Why:** operationalizes the decision already made in ADR-004 (VPC
-Peering over Transit Gateway at current scale) by making it
-structurally enforced rather than a decision that only lives in a
-document nobody re-checks. Transit Gateway carries meaningful
-per-hour and per-GB costs; blocking its creation in low-stakes OUs
-prevents it from being spun up experimentally and forgotten.
-Intentionally not applied to Infrastructure OU or Prod, since
-Transit Gateway may become the correct choice there as this
-landing zone grows past the account count where VPC Peering's
-full-mesh topology stops scaling — see ADR-004's "Alternatives
-Considered."
+**Why:** Transit Gateway has real per-hour and per-GB costs, so this control makes sure nobody spins one up just to experiment and forgets about it. It also lines up with the decision to use VPC Peering instead of Transit Gateway at the current scale (ADR-004). At enterprise scale, or with a lot more accounts, this might make less sense, but for now that's the call.
+
+Not applied to the Infrastructure OU, in case a future decision is made to run Transit Gateway centrally from a Networking account.
 
 ### 3. Require mandatory resource tags
 
-**Applies to:** all OUs except Security OU (Control Tower-managed
-accounts don't need project-level tagging).
+**Applies to:** all OUs except Security OU (Control Tower-managed accounts don't need project-level tagging).
 
-**Denies:** `ec2:RunInstances`, `rds:CreateDBInstance`,
-`s3:CreateBucket` unless the request includes `Project` and
-`Environment` tags.
+**Denies:** `ec2:RunInstances`, `rds:CreateDBInstance`, `s3:CreateBucket` unless the request includes `Project` and `Environment` tags.
 
-**Why:** this is the one SCP here driven by an actual future need,
-not just risk prevention — this landing zone is intended to host
-multiple future projects (per its long-term purpose, not just this
-portfolio exercise). Without enforced tagging from day one, cost
-allocation and resource ownership across projects becomes
-unrecoverable after the fact. Cheaper to enforce structurally now,
-before any real workload exists, than to retrofit tagging discipline
-onto existing resources later.
-
-
-
+**Why:** this is the one SCP here based on an actual future need, not just risk prevention. This landing zone is meant to host multiple future projects, not just this one. Without tagging enforced from day one, tracking cost and ownership across projects becomes impossible to fix later. It's cheaper to enforce this now, before any real workload exists, than to retrofit tagging discipline onto resources that already exist.
 
 ## Consequences
 
-**Positive:** closes the actual gap left by Control Tower's default controls — workloads get baseline protection instead of relying on discipline alone. Root-level policies (deny root, deny leave-org) apply automatically to every future account added under any OU, with no per-account setup.
+**Positive:** closes the actual gap left by Control Tower's default controls. Workloads get baseline protection instead of relying on people remembering to be careful. All three SCPs apply automatically to every account created under their target OUs going forward, with no extra setup per account.
 
-**Negative:** these 3 SCPs need to be written, tested in Policy Staging OU, and maintained in Terraform — unlike Control Tower's controls, they don't get updated by AWS automatically if best practices change.
+**Negative:** these 3 SCPs need to be written, tested in Policy Staging OU, and kept up to date in Terraform. Unlike Control Tower's controls, AWS doesn't update them automatically if best practices change.
 
 ## Alternatives Considered
 
-- **Wait and add SCPs only when a real workload account exists.** Rejected — the org-wide policies (deny root, deny leave-org) cost nothing to have in place early and protect every account created from that point forward, including this project's own accounts.
-- **Recreate everything Control Tower's 13 controls already do, as custom SCPs, for full visibility in Terraform.** Rejected — redundant and risks drifting from CT-managed policies over time; the platform already owns and maintains that layer.
+- **Wait and add SCPs only once a real workload account exists.** Rejected. These SCPs cost nothing to have in place early, and they protect every account created under their target OUs from that point on, including this project's own accounts.
+- **Recreate everything Control Tower's 13 controls already do, as custom SCPs, just to have it all visible in Terraform.** Rejected. It's redundant, and risks drifting from Control Tower's own policies over time. The platform already owns and maintains that layer.
