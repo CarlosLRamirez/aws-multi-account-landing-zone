@@ -22,9 +22,7 @@ Root
 └── Policy Staging OU
 ```
 
-## Prerequisites
-
-- In progress
+## Prerequisites - In progress
 
 ## Repository Structure
 
@@ -45,6 +43,19 @@ Root
 - [x] Billing Budgets & CloudWatch billing alarm
 - [x] ADR-001-OU-Structure Documented
 - [x] AWS Control Tower Wizard run
+- [x] Create the missing OUs according to ADR-001
+	- Infrastructure OU
+	- Workloads OU
+		- Dev OU
+		- Staging OU
+		- Prod OU
+	- Policy Staging OU
 - [x] ADR-002-Foundational Account and Parameters Documented
 - [x] ADR-003-Guardrail-Strategy Documented
-- [ ] Custom Guardrails deployment via Terraform
+- [x] Create Policy Staging test account via Account Factory (manual, persistent staging account)
+- [ ] Create & test SCP #1 (Restricted EC2 instance types) manually in Policy Staging
+- [ ] Create & test SCP #2 (Deny Transit Gateway creation) manually in Policy Staging
+- [ ] Create & test SCP #3 (Require mandatory resource tags) manually in Policy Staging
+- [ ] Automate with Terraform: Policy Staging test account provisioning
+- [ ] Automate with Terraform: SCP #1, #2, #3 (attach to their target OUs per ADR-003)
+- [ ] Decide: keep Policy Staging test account persistent, or destroy after automation
