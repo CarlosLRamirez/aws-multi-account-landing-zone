@@ -2,7 +2,8 @@
 
 ## Overview
 
-This repository contains the Infrastructure as Code (IaC) and architectural decision records (ADRs) for deploying an **AWS Control Tower Landing Zone**. It establishes a multi-account governance framework tailored for both experimental lab environments and production-grade multi-stage workloads.
+This repository documents the process of implementing an **AWS Control Tower Landing Zone**. It includes the implementation walkthrough, the Terraform Infrastructure as Code (IaC), and the architectural decision records (ADRs). This landing zone serves as a personal portfolio and learning lab, built to resemble an enterprise-grade structure following best practices for governance and security in multi-account, multi-stage cloud environments.
+
 
 ## Architecture
 
@@ -31,20 +32,32 @@ Root
 
 ## Implementation Walk-through
 
-- Created a brand new AWS account from scratch to serve as the Management Account.
+- Created a new AWS account to serve as the Management Account.
 - Configured MFA on the root user.
-- Created an IAM user with `AdministratorAccess` and configured MFA on it.
+- Created an IAM user with `AdministratorAccess` and MFA as a bootstrap admin for the initial setup.
 - Enabled IAM billing access so the IAM user could view billing information.
-- Created a Budget, enabled CloudWatch billing alarms, and set up a CloudWatch alarm as a backup safeguard.
-- Ran the Control Tower wizard from the Management Account using the newly created IAM user.
-- Hit several issues getting the wizard to complete, but got there in the end. In the process, two new accounts were created:
+- Set up a Budget, CloudWatch billing alarms, and a billing alarm as a cost safeguard.
+- Ran the Control Tower wizard from the Management Account. The wizard created two managed accounts:
   - `LogArchive`: holds CloudTrail logs.
   - `Aggregator account`: handles Config aggregation.
-  - I also created an `Audit` account, which I later closed. It's still part of the Organization but shows as Closed and isn't managed by Control Tower. I could remove it from the Organization, but that requires meeting certain requirements to convert it to standalone first. Since it's already closed, I'm planning to wait 90 days to see if it disappears on its own.
-- After Control Tower finished deploying, I received an IAM Identity Center invitation, with the username matching the management account's email and an access URL.
-- Created the OUs that were missing and that the Control Tower wizard didn't create: Infrastructure, Workloads, Dev, Staging, Prod, Policy Staging.
-- Registered the Policy Staging OU with Control Tower so it's included in the landing zone baseline, along with any accounts under it.
-- Used Control Tower's Account Factory to create a new `SCP-test` account inside the Policy Staging OU, which I'll use to test SCPs in an isolated environment before deploying them to their target OU.
+  - Note: an `Audit` account was created during this process and later closed. It still appears in the Organization as Closed. Removal requires converting it to a standalone account first, so the plan is to wait 90 days and let it drop off on its own.
+- After Control Tower finished, received an IAM Identity Center invitation with an auto-generated user tied to the management account root email.
+- Created the OUs not provisioned by the wizard: Infrastructure, Workloads, Dev, Staging, Prod, Policy Staging.
+- Registered the Policy Staging OU with Control Tower to include it in the landing zone baseline.
+- Used Account Factory to create the `SCP-test` account inside Policy Staging — an isolated account for testing SCPs before attaching them to their target OUs.
+- Created and tested SCP #1 (restricted EC2 instance types) manually in Policy Staging. Both positive and negative tests passed.
+- Replaced the auto-generated Identity Center user with a proper group-based access model:
+  - Created three groups: `platform-admins`, `developers`, `readonly-auditors`.
+  - Created three permission sets: `AdministratorAccess`, `ReadOnlyAccess`, and a custom `DeveloperAccess` scoped to EC2, S3, and Lambda with `iam:PassRole` restricted to trusted services only.
+  - Assigned groups to accounts with the appropriate permission sets.
+  - Created user `carlos.ramirez` (member of `platform-admins` and `developers`) and `carlosvsccnp` (member of `developers` only) to simulate different access personas.
+  - Deleted the auto-generated user tied to the root email.
+  - Customized the Identity Center portal URL to `https://mylz2027.awsapps.com/start`.
+- Replaced the IAM bootstrap user with a hardened break-glass access model:
+  - Created `BreakGlassAdminRole` with `AdministratorAccess` and a trust policy that requires MFA, scoped exclusively to the `breakglass` IAM user.
+  - Created the `breakglass` IAM user with console access, MFA, and a single permission: `sts:AssumeRole` targeting `BreakGlassAdminRole`.
+  - Deleted the original IAM bootstrap user.
+  - Verified the fallback flow: `breakglass` login + MFA → Switch role → full admin access.
 
 
 
@@ -87,7 +100,7 @@ Root
 - [x] ADR-003-Guardrail-Strategy Documented
 - [x] Create Policy Staging test account via Account Factory (manual, persistent staging account)
 - [x] Create & test SCP #1 (Restricted EC2 instance types) manually in Policy Staging
-- [ ] Create & test SCP #2 (Deny Transit Gateway creation) manually in Policy Staging
+- [x] Create & test SCP #2 (Deny Transit Gateway creation) manually in Policy Staging
 - [ ] Create & test SCP #3 (Require mandatory resource tags) manually in Policy Staging
 - [ ] Automate with Terraform: Policy Staging test account provisioning
 - [ ] Automate with Terraform: SCP #1, #2, #3 (attach to their target OUs per ADR-003)
