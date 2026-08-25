@@ -20,6 +20,7 @@ Root
 │   ├── Staging OU
 │   └── Prod OU
 └── Policy Staging OU
+    └── SCP-test              # Test SCP before going production
 ```
 
 ## Key Design Decisions
@@ -82,14 +83,41 @@ Root
 - [x] ADR-002-Foundational Account and Parameters Documented
 - [x] ADR-003-Guardrail-Strategy Documented
 - [x] Create Policy Staging test account via Account Factory (manual, persistent staging account)
-- [ ] Create & test SCP #1 (Restricted EC2 instance types) manually in Policy Staging
+- [x] Create & test SCP #1 (Restricted EC2 instance types) manually in Policy Staging
 - [ ] Create & test SCP #2 (Deny Transit Gateway creation) manually in Policy Staging
 - [ ] Create & test SCP #3 (Require mandatory resource tags) manually in Policy Staging
 - [ ] Automate with Terraform: Policy Staging test account provisioning
 - [ ] Automate with Terraform: SCP #1, #2, #3 (attach to their target OUs per ADR-003)
-- [ ] Decide: keep Policy Staging test account persistent, or destroy after automation
 - [ ] Improve the Control Tower's administrative access model
-  - Decouple administrative privileges from the IAM user and move administration to roles protected by MFA and SSO
+  - [ ] **IAM Identity Center — define groups and permission set model**
+    - Create Identity Center groups: `platform-admins`, `developers`, `readonly-auditors`
+    - Create permission sets: `AdministratorAccess` (AWS managed), `ReadOnlyAccess` (AWS managed), `DeveloperAccess` (custom, scoped to EC2/S3/Lambda in Sandbox and Dev)
+    - Assign permission sets to groups per account:
+
+      | Group | management | SCP-test | Sandbox | Dev | Staging | Prod |
+      |---|---|---|---|---|---|---|
+      | platform-admins | AdministratorAccess | AdministratorAccess | AdministratorAccess | AdministratorAccess | AdministratorAccess | AdministratorAccess |
+      | developers | ReadOnlyAccess | — | DeveloperAccess | DeveloperAccess | ReadOnlyAccess | ReadOnlyAccess |
+      | readonly-auditors | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess |
+
+  - [ ] **IAM Identity Center — replace auto-created user with real users**
+    - Disable or delete the Identity Center user created automatically by the Control Tower wizard (tied to the root email)
+    - Create user `carlos` (primary admin) → add to `platform-admins` + `developers`
+    - Create user `carlos-dev` (secondary, simulates a developer persona) → add to `developers` only
+    - Verify both users can log in and see only the accounts and permission sets they should
+  - [ ] **IAM Identity Center — clean up stale permission set assignments**
+    - Remove `AWSOrganizationFullAccess` assignment from `SCP-test` account (misleading on a member account)
+    - Remove `AWSServiceCatalogEndUserAccess` from management account if Account Factory access is covered by `AdministratorAccess`
+  - [ ] **Management account — harden the IAM bootstrap user**
+    - Create a `BreakGlassAdminRole` IAM role with `AdministratorAccess` and a trust policy requiring MFA, scoped to the IAM bootstrap user
+    - Remove `AdministratorAccess` directly from the IAM user; replace with a single `sts:AssumeRole` permission targeting `BreakGlassAdminRole`
+    - Verify the fallback flow: IAM user + MFA → AssumeRole → temporary admin credentials
+  - [ ] **Document the intended access hierarchy**
+    ```
+    Normal:    Identity Center → group membership → permission set → temporary credentials
+    Fallback:  IAM user + MFA → AssumeRole → BreakGlassAdminRole → temporary credentials
+    Recovery:  Root user → root-only and account-recovery operations only
+    ```
 
 ## What I Learned
 
