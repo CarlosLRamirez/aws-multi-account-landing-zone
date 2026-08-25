@@ -46,6 +46,9 @@ Root
 - Registered the Policy Staging OU with Control Tower so it's included in the landing zone baseline, along with any accounts under it.
 - Used Control Tower's Account Factory to create a new `SCP-test` account inside the Policy Staging OU, which I'll use to test SCPs in an isolated environment before deploying them to their target OU.
 
+
+
+
 ## Cost Discipline
 
 [Budget strategy and thresholds; CloudWatch billing alarms; cost considerations and rejected alternatives]
@@ -88,11 +91,12 @@ Root
 - [ ] Create & test SCP #3 (Require mandatory resource tags) manually in Policy Staging
 - [ ] Automate with Terraform: Policy Staging test account provisioning
 - [ ] Automate with Terraform: SCP #1, #2, #3 (attach to their target OUs per ADR-003)
-- [ ] Improve the Control Tower's administrative access model
-  - [ ] **IAM Identity Center — define groups and permission set model**
-    - Create Identity Center groups: `platform-admins`, `developers`, `readonly-auditors`
-    - Create permission sets: `AdministratorAccess` (AWS managed), `ReadOnlyAccess` (AWS managed), `DeveloperAccess` (custom, scoped to EC2/S3/Lambda in Sandbox and Dev)
-    - Assign permission sets to groups per account:
+- [ ] Decide: keep Policy Staging test account persistent, or destroy after automation
+- [x] Improve the Control Tower's administrative access model
+  - [x] **IAM Identity Center — define groups and permission set model**
+    - Created Identity Center groups: `platform-admins`, `developers`, `readonly-auditors`
+    - Created permission sets: `AdministratorAccess` (AWS managed), `ReadOnlyAccess` (AWS managed), `DeveloperAccess` (custom, scoped to EC2/S3/Lambda with `iam:PassRole` restricted to `lambda.amazonaws.com` and `ec2.amazonaws.com`)
+    - Assigned permission sets to groups per account (Sandbox/Dev/Staging/Prod pending account creation):
 
       | Group | management | SCP-test | Sandbox | Dev | Staging | Prod |
       |---|---|---|---|---|---|---|
@@ -100,22 +104,26 @@ Root
       | developers | ReadOnlyAccess | — | DeveloperAccess | DeveloperAccess | ReadOnlyAccess | ReadOnlyAccess |
       | readonly-auditors | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess |
 
-  - [ ] **IAM Identity Center — replace auto-created user with real users**
-    - Disable or delete the Identity Center user created automatically by the Control Tower wizard (tied to the root email)
-    - Create user `carlos` (primary admin) → add to `platform-admins` + `developers`
-    - Create user `carlos-dev` (secondary, simulates a developer persona) → add to `developers` only
-    - Verify both users can log in and see only the accounts and permission sets they should
-  - [ ] **IAM Identity Center — clean up stale permission set assignments**
-    - Remove `AWSOrganizationFullAccess` assignment from `SCP-test` account (misleading on a member account)
-    - Remove `AWSServiceCatalogEndUserAccess` from management account if Account Factory access is covered by `AdministratorAccess`
-  - [ ] **Management account — harden the IAM bootstrap user**
-    - Create a `BreakGlassAdminRole` IAM role with `AdministratorAccess` and a trust policy requiring MFA, scoped to the IAM bootstrap user
-    - Remove `AdministratorAccess` directly from the IAM user; replace with a single `sts:AssumeRole` permission targeting `BreakGlassAdminRole`
-    - Verify the fallback flow: IAM user + MFA → AssumeRole → temporary admin credentials
-  - [ ] **Document the intended access hierarchy**
+  - [x] **IAM Identity Center — replace auto-created user with real users**
+    - Created user `carlos.ramirez` (primary admin) → member of `platform-admins` + `developers`
+    - Created user `carlosvsccnp` (developer persona) → member of `developers` only
+    - Verified: `carlos.ramirez` sees management + SCP-test with correct permission sets; `carlosvsccnp` sees management with `ReadOnlyAccess` only
+    - Deleted the auto-created user `carloslrm+ct26-mgmt@gmail.com` tied to the root email
+    - Customized the Identity Center access portal URL to `https://mylz2027.awsapps.com/start`
+  - [x] **IAM Identity Center — clean up stale permission set assignments**
+    - `AWSOrganizationFullAccess` on SCP-test belongs to the `AWSControlTowerAdmins` group, created and managed by Control Tower — do not remove
+    - `AWSServiceCatalogEndUserAccess` on management belongs to the `AWSAccountFactory` group, also Control Tower-managed — do not remove
+    - No stale assignments found; all non-Control Tower assignments are group-based and intentional
+  - [x] **Management account — harden the IAM bootstrap user**
+    - Created `BreakGlassAdminRole` IAM role with `AdministratorAccess` and a trust policy requiring MFA, scoped exclusively to the `breakglass` IAM user
+    - Created IAM user `breakglass` (replaces the original `carlos.ramirez` IAM bootstrap user) with console access, MFA, and a single inline policy: `sts:AssumeRole` targeting `BreakGlassAdminRole` only
+    - Deleted the original `carlos.ramirez` IAM bootstrap user
+    - Verified the fallback flow: `breakglass` login + MFA → Switch role → `BreakGlassAdminRole` → full admin access
+    - Note: Switch Role in the console does not prompt for MFA again — MFA was already verified at login, so `aws:MultiFactorAuthPresent: true` is already set on the session when the trust policy is evaluated
+  - [x] **Document the intended access hierarchy**
     ```
     Normal:    Identity Center → group membership → permission set → temporary credentials
-    Fallback:  IAM user + MFA → AssumeRole → BreakGlassAdminRole → temporary credentials
+    Fallback:  breakglass IAM user + MFA → Switch role → BreakGlassAdminRole → temporary credentials
     Recovery:  Root user → root-only and account-recovery operations only
     ```
 
