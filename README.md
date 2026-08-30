@@ -4,7 +4,6 @@
 
 This repository documents the process of implementing an **AWS Control Tower Landing Zone**. It includes the implementation walkthrough, the Terraform Infrastructure as Code (IaC), and the architectural decision records (ADRs). This landing zone serves as a personal portfolio and learning lab, built to resemble an enterprise-grade structure following best practices for governance and security in multi-account, multi-stage cloud environments.
 
-
 ## Architecture
 
 ```text
@@ -26,9 +25,9 @@ Root
 
 ## Key Design Decisions
 
-- [ADR-001: OU-Structure](ADR-001-OU-Structure.md)
-- [ADR-002: Foundational Accounts](ADR-002-Foundational-Accounts.md)
-- [ADR-003: Guardrails-Strategy](ADR-003-Guardrail-Strategy.md)
+- [ADR-001: OU Structure](docs/adr/ADR-001-OU-Structure.md)
+- [ADR-002: Foundational Accounts](docs/adr/ADR-002-Foundational-Accounts.md)
+- [ADR-003: Guardrail Strategy](docs/adr/ADR-003-Guardrail-Strategy.md)
 
 ## Implementation Walk-through
 
@@ -40,12 +39,15 @@ Root
 - Ran the Control Tower wizard from the Management Account. The wizard created two managed accounts:
   - `LogArchive`: holds CloudTrail logs.
   - `Aggregator account`: handles Config aggregation.
-  - Note: an `Audit` account was created during this process and later closed. It still appears in the Organization as Closed. Removal requires converting it to a standalone account first, so the plan is to wait 90 days and let it drop off on its own.
+  - Note: an `Audit` account was created during this process and later closed. It still appears in the Organization with status Closed; AWS automatically removes closed accounts 90 days after closure, so the plan is to let it drop off on its own.
 - After Control Tower finished, received an IAM Identity Center invitation with an auto-generated user tied to the management account root email.
 - Created the OUs not provisioned by the wizard: Infrastructure, Workloads, Dev, Staging, Prod, Policy Staging.
 - Registered the Policy Staging OU with Control Tower to include it in the landing zone baseline.
 - Used Account Factory to create the `SCP-test` account inside Policy Staging — an isolated account for testing SCPs before attaching them to their target OUs.
-- Created and tested SCP #1 (restricted EC2 instance types) manually in Policy Staging. Both positive and negative tests passed.
+- Created and tested three custom SCPs manually in Policy Staging (attach to Policy Staging OU → test in the SCP-test account → detach), per ADR-003. Both positive and negative tests passed for all three. The exact policy documents are kept under [`policies/`](policies/) for reuse once this is automated with Terraform:
+  - SCP #1 — [Restricted EC2 instance types](policies/scp-1-restricted-ec2-instance-types.json)
+  - SCP #2 — [Deny Transit Gateway creation](policies/scp-2-deny-transit-gateway.json)
+  - SCP #3 — [Require mandatory resource tags](policies/scp-3-require-mandatory-tags.json)
 - Replaced the auto-generated Identity Center user with a proper group-based access model:
   - Created three groups: `platform-admins`, `developers`, `readonly-auditors`.
   - Created three permission sets: `AdministratorAccess`, `ReadOnlyAccess`, and a custom `DeveloperAccess` scoped to EC2, S3, and Lambda with `iam:PassRole` restricted to trusted services only.
@@ -59,9 +61,6 @@ Root
   - Deleted the original IAM bootstrap user.
   - Verified the fallback flow: `breakglass` login + MFA → Switch role → full admin access.
 
-
-
-
 ## Cost Discipline
 
 [Budget strategy and thresholds; CloudWatch billing alarms; cost considerations and rejected alternatives]
@@ -74,9 +73,10 @@ Root
 
 ```text
 ├── docs
-│   └── adr
+│   └── adr              # Architectural Decision Records
+├── policies              # SCP JSON documents (tested, ready for Terraform reuse)
 ├── README.md            # this file
-└── terraform
+└── terraform             # not yet started
 ```
 
 ## Status & Progress
@@ -101,7 +101,7 @@ Root
 - [x] Create Policy Staging test account via Account Factory (manual, persistent staging account)
 - [x] Create & test SCP #1 (Restricted EC2 instance types) manually in Policy Staging
 - [x] Create & test SCP #2 (Deny Transit Gateway creation) manually in Policy Staging
-- [ ] Create & test SCP #3 (Require mandatory resource tags) manually in Policy Staging
+- [x] Create & test SCP #3 (Require mandatory resource tags) manually in Policy Staging
 - [ ] Automate with Terraform: Policy Staging test account provisioning
 - [ ] Automate with Terraform: SCP #1, #2, #3 (attach to their target OUs per ADR-003)
 - [ ] Decide: keep Policy Staging test account persistent, or destroy after automation
@@ -111,11 +111,11 @@ Root
     - Created permission sets: `AdministratorAccess` (AWS managed), `ReadOnlyAccess` (AWS managed), `DeveloperAccess` (custom, scoped to EC2/S3/Lambda with `iam:PassRole` restricted to `lambda.amazonaws.com` and `ec2.amazonaws.com`)
     - Assigned permission sets to groups per account (Sandbox/Dev/Staging/Prod pending account creation):
 
-      | Group | management | SCP-test | Sandbox | Dev | Staging | Prod |
-      |---|---|---|---|---|---|---|
-      | platform-admins | AdministratorAccess | AdministratorAccess | AdministratorAccess | AdministratorAccess | AdministratorAccess | AdministratorAccess |
-      | developers | ReadOnlyAccess | — | DeveloperAccess | DeveloperAccess | ReadOnlyAccess | ReadOnlyAccess |
-      | readonly-auditors | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess | ReadOnlyAccess |
+      | Group             | management          | SCP-test            | Sandbox             | Dev                 | Staging             | Prod                |
+      | ----------------- | ------------------- | ------------------- | ------------------- | ------------------- | ------------------- | ------------------- |
+      | platform-admins   | AdministratorAccess | AdministratorAccess | AdministratorAccess | AdministratorAccess | AdministratorAccess | AdministratorAccess |
+      | developers        | ReadOnlyAccess      | —                   | DeveloperAccess     | DeveloperAccess     | ReadOnlyAccess      | ReadOnlyAccess      |
+      | readonly-auditors | ReadOnlyAccess      | ReadOnlyAccess      | ReadOnlyAccess      | ReadOnlyAccess      | ReadOnlyAccess      | ReadOnlyAccess      |
 
   - [x] **IAM Identity Center — replace auto-created user with real users**
     - Created user `carlos.ramirez` (primary admin) → member of `platform-admins` + `developers`
@@ -134,6 +134,7 @@ Root
     - Verified the fallback flow: `breakglass` login + MFA → Switch role → `BreakGlassAdminRole` → full admin access
     - Note: Switch Role in the console does not prompt for MFA again — MFA was already verified at login, so `aws:MultiFactorAuthPresent: true` is already set on the session when the trust policy is evaluated
   - [x] **Document the intended access hierarchy**
+
     ```
     Normal:    Identity Center → group membership → permission set → temporary credentials
     Fallback:  breakglass IAM user + MFA → Switch role → BreakGlassAdminRole → temporary credentials

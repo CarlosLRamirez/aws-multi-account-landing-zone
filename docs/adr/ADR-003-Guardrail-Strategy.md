@@ -46,6 +46,8 @@ A 4th SCP was considered early on, to restrict which regions could be used. That
 
 ### 1. Restricted EC2 instance types (cost guardrail)
 
+**Policy document:** [`policies/scp-1-restricted-ec2-instance-types.json`](../../policies/scp-1-restricted-ec2-instance-types.json)
+
 **Applies to:** Sandbox OU, Dev OU.
 
 **Denies:** `ec2:RunInstances` unless the requested instance type is on an approved list of low-cost types (e.g. `t3.micro`, `t3.small`, `t2.micro`).
@@ -53,6 +55,8 @@ A 4th SCP was considered early on, to restrict which regions could be used. That
 **Why:** stops an accidental expensive instance launch, like a typo in the instance type, or a copy-pasted example from documentation that uses a GPU or large memory-optimized instance in environments where there's no real reason to need that capacity. Prod OU doesn't get this restriction. A production workload might actually need a bigger instance, and that decision should go through Prod's own review process instead of a blanket org-wide rule.
 
 ### 2. Deny Transit Gateway creation
+
+**Policy document:** [`policies/scp-2-deny-transit-gateway.json`](../../policies/scp-2-deny-transit-gateway.json)
 
 **Applies to:** Sandbox OU, Workloads OU.
 
@@ -63,6 +67,8 @@ A 4th SCP was considered early on, to restrict which regions could be used. That
 Not applied to the Infrastructure OU, in case a future decision is made to run Transit Gateway centrally from a Networking account.
 
 ### 3. Require mandatory resource tags
+
+**Policy document:** [`policies/scp-3-require-mandatory-tags.json`](../../policies/scp-3-require-mandatory-tags.json)
 
 **Applies to:** all OUs except Security OU (Control Tower-managed accounts don't need project-level tagging).
 

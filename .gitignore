@@ -7,6 +7,7 @@
 .terraform.lock.hcl
 crash.log
 crash.*.log
+.markdownlint.json
 
 # macOS
 .DS_Store

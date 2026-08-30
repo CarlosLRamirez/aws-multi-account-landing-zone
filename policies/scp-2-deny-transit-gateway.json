@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyTransitGatewayCreation",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:CreateTransitGateway",
+        "ec2:CreateTransitGatewayVpcAttachment"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

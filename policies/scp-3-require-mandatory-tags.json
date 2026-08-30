@@ -1,0 +1,47 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyEC2WithoutProjectTag",
+      "Effect": "Deny",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": { "Null": { "aws:RequestTag/Project": "true" } }
+    },
+    {
+      "Sid": "DenyEC2WithoutEnvironmentTag",
+      "Effect": "Deny",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": { "Null": { "aws:RequestTag/Environment": "true" } }
+    },
+    {
+      "Sid": "DenyRDSWithoutProjectTag",
+      "Effect": "Deny",
+      "Action": "rds:CreateDBInstance",
+      "Resource": "*",
+      "Condition": { "Null": { "aws:RequestTag/Project": "true" } }
+    },
+    {
+      "Sid": "DenyRDSWithoutEnvironmentTag",
+      "Effect": "Deny",
+      "Action": "rds:CreateDBInstance",
+      "Resource": "*",
+      "Condition": { "Null": { "aws:RequestTag/Environment": "true" } }
+    },
+    {
+      "Sid": "DenyS3WithoutProjectTag",
+      "Effect": "Deny",
+      "Action": "s3:CreateBucket",
+      "Resource": "*",
+      "Condition": { "Null": { "aws:RequestTag/Project": "true" } }
+    },
+    {
+      "Sid": "DenyS3WithoutEnvironmentTag",
+      "Effect": "Deny",
+      "Action": "s3:CreateBucket",
+      "Resource": "*",
+      "Condition": { "Null": { "aws:RequestTag/Environment": "true" } }
+    }
+  ]
+}

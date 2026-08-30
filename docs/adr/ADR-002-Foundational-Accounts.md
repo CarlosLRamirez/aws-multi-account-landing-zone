@@ -8,7 +8,7 @@ Accepted
 
 AWS Control Tower Landing Zone 4.0 changed how foundational accounts are organized compared to previous versions.
 
-Prior to 4.0, Config and CloudTrail shared resources and were conceptually bundled under a single "Audit" account acting as a general security/logging account. I the new version, this is decoupled: Config and CloudTrail now use separate dedicated S3 buckets and SNS topics instead of shared resources, The wizard no longer assumes a single predefined "Audit" account, instead it asks separately which account should serve as the _Config Aggregator_ and which should serve as the _CloudTrail administrator_, allowing the user to customize the names of this accounts.
+Prior to 4.0, Config and CloudTrail shared resources and were conceptually bundled under a single "Audit" account acting as a general security/logging account. In the new version, this is decoupled: Config and CloudTrail now use separate dedicated S3 buckets and SNS topics instead of shared resources. The wizard no longer assumes a single predefined "Audit" account; instead, it asks separately which account should serve as the _Config Aggregator_ and which should serve as the _CloudTrail administrator_, allowing the user to customize the names of these accounts.
 
 ### Implementation Discovery
 
@@ -20,7 +20,7 @@ Next, you must enable AWS CloudTrail Centralized Logging, where you must similar
 
 In this step, the wizard was canceled to reevaluate the most appropriate names for each of these accounts. However, even though the wizard was canceled and Control Tower was not deployed on the first attempt, the AWS Organization had already been created, with the current account as the management account; the Audit account had also been created within the Security OU.
 
-The Audit account was located within the AWS Organization and deleted before attempting to deploy Control Tower again.
+The Audit account was located within the AWS Organization and closed before attempting to deploy Control Tower again.
 
 In this new attempt, new accounts were assigned for both the Config service and CloudTrail; these were the Aggregator account and LogArchive, respectively.
 
@@ -58,7 +58,7 @@ The `Audit` account is closed, and although it remains part of the Organization,
 
 **Negative / minor technical debt:**
 
-- **Orphaned `Audit` account**: It appears on AWS Organization with status Closed Status but not managed by Control Tower, even is Closed , AWS deletes all resources in the account and the account becomes unrecoverable 90 days after it's closed.
+- **Orphaned `Audit` account**: It appears in the AWS Organization with status Closed but was never managed by Control Tower. Even while Closed, AWS retains the account for 90 days before deleting all its resources and making it permanently unrecoverable.
 - **Naming inconsistency vs. the original plan.** "Aggregator account" and "LogArchive" are used instead of "Audit" and "Log Archive." Functionally equivalent; cosmetic only, and documented here as intentional rather than left unexplained.
 - **No KMS customer-managed keys.** Acceptable for a lab-scale deployment with no compliance mandate; would need explicit reconsideration before this landing zone hosts anything with a real regulatory or contractual encryption requirement.
 
