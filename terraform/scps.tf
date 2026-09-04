@@ -35,3 +35,52 @@ resource "aws_organizations_policy" "require_mandatory_tags" {
   type        = "SERVICE_CONTROL_POLICY"
   content     = file("${path.module}/../policies/scp-3-require-mandatory-tags.json")
 }
+
+# Attachments — the actual guardrail-activation step, kept separate from the
+# resources above (see ADR-003 for the narrowed target-OU decision).
+#
+# Mandatory tags attaches once at Workloads: SCPs inherit down the OU tree,
+# so Dev/Staging/Prod get it without a separate attachment each. Restrict EC2
+# types attaches directly to Dev and Staging only — Prod is deliberately
+# excluded (ADR-003), and Sandbox is out of scope for now.
+#
+# Deny TGW is the one exception: it attaches to every OU except Security
+# (Infrastructure, Sandbox, Workloads, Policy Staging) with no carve-out for
+# the Networking account, per ADR-004 — the whole point is no silent
+# exception for the one account that looks like the natural place to build
+# a Transit Gateway.
+
+resource "aws_organizations_policy_attachment" "deny_transit_gateway_infrastructure" {
+  policy_id = aws_organizations_policy.deny_transit_gateway.id
+  target_id = aws_organizations_organizational_unit.infrastructure.id
+}
+
+resource "aws_organizations_policy_attachment" "deny_transit_gateway_sandbox" {
+  policy_id = aws_organizations_policy.deny_transit_gateway.id
+  target_id = aws_organizations_organizational_unit.sandbox.id
+}
+
+resource "aws_organizations_policy_attachment" "deny_transit_gateway_workloads" {
+  policy_id = aws_organizations_policy.deny_transit_gateway.id
+  target_id = aws_organizations_organizational_unit.workloads.id
+}
+
+resource "aws_organizations_policy_attachment" "deny_transit_gateway_policy_staging" {
+  policy_id = aws_organizations_policy.deny_transit_gateway.id
+  target_id = aws_organizations_organizational_unit.policy_staging.id
+}
+
+resource "aws_organizations_policy_attachment" "require_mandatory_tags_workloads" {
+  policy_id = aws_organizations_policy.require_mandatory_tags.id
+  target_id = aws_organizations_organizational_unit.workloads.id
+}
+
+resource "aws_organizations_policy_attachment" "restrict_ec2_types_dev" {
+  policy_id = aws_organizations_policy.restrict_ec2_types.id
+  target_id = aws_organizations_organizational_unit.dev.id
+}
+
+resource "aws_organizations_policy_attachment" "restrict_ec2_types_staging" {
+  policy_id = aws_organizations_policy.restrict_ec2_types.id
+  target_id = aws_organizations_organizational_unit.staging.id
+}

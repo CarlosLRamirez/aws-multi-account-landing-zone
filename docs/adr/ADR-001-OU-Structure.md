@@ -22,7 +22,7 @@ Root
 │   ├── LogArchive            # Control Tower Managed
 │   └── Aggregator account    # Control Tower Managed
 ├── Infrastructure OU
-│   ├── Shared Services
+│   ├── Shared Services       #future
 │   └── Networking
 ├── Sandbox OU                # Labs and experimentation
 ├── Workloads OU              # Operational Environments

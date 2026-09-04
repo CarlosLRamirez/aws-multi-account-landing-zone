@@ -48,33 +48,37 @@ A 4th SCP was considered early on, to restrict which regions could be used. That
 
 **Policy document:** [`policies/scp-1-restricted-ec2-instance-types.json`](../../policies/scp-1-restricted-ec2-instance-types.json)
 
-**Applies to:** Sandbox OU, Dev OU.
+**Applies to:** Dev OU, Staging OU.
 
 **Denies:** `ec2:RunInstances` unless the requested instance type is on an approved list of low-cost types (e.g. `t3.micro`, `t3.small`, `t2.micro`).
 
 **Why:** stops an accidental expensive instance launch, like a typo in the instance type, or a copy-pasted example from documentation that uses a GPU or large memory-optimized instance in environments where there's no real reason to need that capacity. Prod OU doesn't get this restriction. A production workload might actually need a bigger instance, and that decision should go through Prod's own review process instead of a blanket org-wide rule.
 
+Note: the original proposal also included Sandbox OU. At attachment time, Sandbox was dropped from scope — it has no real workloads yet, so there was nothing concrete to protect there. It can be added later if Sandbox starts hosting anything.
+
 ### 2. Deny Transit Gateway creation
 
 **Policy document:** [`policies/scp-2-deny-transit-gateway.json`](../../policies/scp-2-deny-transit-gateway.json)
 
-**Applies to:** Sandbox OU, Workloads OU.
+**Applies to:** all OUs except Security — Infrastructure, Sandbox, Workloads (inherited by Dev, Staging, Prod), and Policy Staging.
 
 **Denies:** `ec2:CreateTransitGateway`, `ec2:CreateTransitGatewayVpcAttachment`.
 
 **Why:** Transit Gateway has real per-hour and per-GB costs, so this control makes sure nobody spins one up just to experiment and forgets about it. It also lines up with the decision to use VPC Peering instead of Transit Gateway at the current scale (ADR-004). At enterprise scale, or with a lot more accounts, this might make less sense, but for now that's the call.
 
-Not applied to the Infrastructure OU, in case a future decision is made to run Transit Gateway centrally from a Networking account.
+Deliberately includes the Infrastructure OU — and therefore the `Networking` account itself — with no exception (see ADR-004). Carving out an exception for the one account that looks like the "natural" place to build a Transit Gateway would just be a silent policy hole; if that decision ever changes, the fix is to remove or scope down this SCP explicitly, not to have pre-baked an exception nobody remembers the reasoning for.
 
 ### 3. Require mandatory resource tags
 
 **Policy document:** [`policies/scp-3-require-mandatory-tags.json`](../../policies/scp-3-require-mandatory-tags.json)
 
-**Applies to:** all OUs except Security OU (Control Tower-managed accounts don't need project-level tagging).
+**Applies to:** Workloads OU (inherited by Dev, Staging, and Prod).
 
 **Denies:** `ec2:RunInstances`, `rds:CreateDBInstance`, `s3:CreateBucket` unless the request includes `Project` and `Environment` tags.
 
 **Why:** this is the one SCP here based on an actual future need, not just risk prevention. This landing zone is meant to host multiple future projects, not just this one. Without tagging enforced from day one, tracking cost and ownership across projects becomes impossible to fix later. It's cheaper to enforce this now, before any real workload exists, than to retrofit tagging discipline onto resources that already exist.
+
+Note: originally proposed for all OUs except Security. Narrowed to Workloads at attachment time — Infrastructure and Policy Staging don't host project workloads in the tagging sense this SCP is meant for, and Sandbox is excluded for the same reason as the other two SCPs above.
 
 ## Consequences
 
