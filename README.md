@@ -2,7 +2,31 @@
 
 ## Overview
 
-This repository documents the process of implementing an **AWS Control Tower Landing Zone**. It includes the implementation walkthrough, the Terraform Infrastructure as Code (IaC), and the architectural decision records (ADRs). This landing zone serves as a personal portfolio and learning lab, built to resemble an enterprise-grade structure following best practices for governance and security in multi-account, multi-stage cloud environments.
+This repository documents the process of implementing an **AWS Control Tower Landing Zone**. It includes the implementation walkthrough, the Terraform Infrastructure as Code (IaC), and the architectural decision records (ADRs). This landing zone serves as a personal portfolio and learning lab, built to resemble an enterprise-grade structure following best practices for governance and security in multi-account, multi-stage cloud environments. The idea is that it serves as the long-term foundation for real personal projects in the future, and not something to create and destroy.
+
+**Status: v1.0 — documentation complete.** Everything described below reflects what's actually built and verified as of this writing. The landing zone itself keeps growing on top of this foundation — see the open items at the end of [Status & Progress](#status--progress) for what's next (inviting the existing Route 53 account, standing up `Shared Services`, provisioning Dev/Staging/Prod, and building the VPC Peering connections).
+
+Although a step-by-step implementation guide is planned, this document does not intend to be that; rather, it covers the general steps taken, the decision-making process, the overall architecture and the lessons learned.
+
+## Outcome
+
+This Landing Zone consists of:
+
+- An AWS Organization under AWS Control Tower 4.0 management
+- The `LogArchive` and `Aggregator` standard CT accounts under a `Security OU` (both Control Tower-managed)
+- A `Networking` account under an `Infrastructure OU`, managed by Terraform
+- Additional empty OUs to allocate future accounts: Sandbox, Workloads (with Dev/Staging/Prod), and Policy Staging
+- 13 preventive controls, deployed by default by Control Tower, governing the accounts under its management
+- **3 additional custom SCPs**, managed and attached to specific OUs by Terraform:
+  - Restricted EC2 instance types
+  - Denied Transit Gateway creation (all OUs except Security, no per-account exceptions)
+  - Mandatory resource tagging
+- **A group-based Identity Center access model** (`platform-admins` / `developers` / `readonly-auditors`) replacing the auto-generated root-tied user — no individual IAM users, and role-based emergency access (`breakglass` + MFA) as fallback
+- **A Terraform codebase** (`terraform/`) covering non-Control-Tower OUs, all 3 SCPs and their attachments, direct account provisioning, and a per-account VPC baseline pattern — reached via cross-account provider aliases from one shared state/backend
+- **A documented, reusable pattern** (this README + ADR-004) for provisioning the next account and its standard network configuration
+- The `Networking` account with its VPC configured (via Terraform), ready to serve as the hub for the future VPC peering connections needed from the workload accounts (Dev, Staging, Prod, and Sandbox)
+
+This is Month 1 of a broader roadmap to move from a Technical Program Manager role into Solutions Architecture — the primary evidence artifact for that transition, not a throwaway lab. The Appendix below links the supporting evidence (console screenshots, `terraform plan`/`apply` output, SCP verification).
 
 ## Architecture
 
@@ -12,7 +36,7 @@ Root
 │   ├── LogArchive            # Control Tower Managed
 │   └── Aggregator account    # Control Tower Managed
 ├── Infrastructure OU
-│   ├── Shared Services
+│   ├── Shared Services      # Planned
 │   └── Networking
 ├── Sandbox OU                # Labs and experimentation
 ├── Workloads OU              # Operational Environments
@@ -20,7 +44,7 @@ Root
 │   ├── Staging OU
 │   └── Prod OU
 └── Policy Staging OU
-    └── SCP-test              # Closed — SCP testing complete, guardrails attached to real OUs
+    └── SCP-test              # Closed — SCP testing purpose
 ```
 
 ## Key Design Decisions
@@ -30,6 +54,18 @@ Root
 - [ADR-003: Guardrail Strategy](docs/adr/ADR-003-Guardrail-Strategy.md)
 - [ADR-004: Networking Strategy (VPC Peering over TGW)](docs/adr/ADR-004-Networking-Strategy.md)
 - [ADR-005: IaC Strategy (Terraform)](docs/adr/ADR-005-IaC-Strategy.md)
+
+## Prerequisites
+
+To review, replicate, or extend this repository, you'd need:
+
+- An AWS account able to become (or already serving as) an Organizations management account, with billing/payment configured.
+- IAM permissions sufficient to enable AWS Organizations, run the Control Tower landing zone wizard, and administer IAM Identity Center — effectively account-root-level access during initial setup.
+- **Tools:** AWS CLI v2, Terraform `>= 1.10` (native S3 lockfile locking, no DynamoDB table), the `hashicorp/aws` provider `~> 5.0`.
+- A named AWS CLI profile with credentials for the management account (this repo uses a profile named `mgmt-admin`).
+- A `terraform/terraform.tfvars` (gitignored, not in this repo) supplying real values for variables like `networking_account_email` — copy `terraform/terraform.tfvars.example` and fill in your own. Account emails aren't hardcoded in `.tf` files on purpose.
+- Familiarity with AWS Organizations, SCPs, and core Control Tower concepts is assumed — this README documents decisions and trade-offs, not AWS fundamentals.
+- A configured Billing Budget and CloudWatch billing alarm _before_ running the Control Tower wizard — see [Cost Discipline](#cost-discipline).
 
 ## Implementation Walk-through
 
@@ -90,29 +126,79 @@ The walk-through above narrates what actually happened, import steps and all. Re
 4. **Harden Identity Center and IAM right away.** The wizard already enables Identity Center, so set up the `platform-admins` / `developers` / `readonly-auditors` groups, permission sets, and real users immediately — that becomes the primary access path. Only once that's working, delete the auto-generated root-email user and retire the temporary bootstrap IAM user into the `breakglass` + `BreakGlassAdminRole` model. Doing this before anything else means every step from here on is done through a hardened identity, not a throwaway admin user.
 5. **Stand up Terraform.** Apply `terraform/bootstrap` first — it creates the remote-state S3 bucket and keeps its own state local, since it can't store its state in the bucket it's creating. Then `terraform init` the main project (`terraform/main.tf`), which points at that bucket and uses native S3 lockfile locking.
 6. **Apply the rest of Terraform in one pass** — `ous.tf`, `scps.tf`, `accounts.tf`. A from-scratch org has none of this yet, so there's no import dance like this repo went through: one `terraform apply` creates every remaining OU (Infrastructure, Workloads, Dev, Staging, Prod, Policy Staging), the 3 SCPs and their attachments, and the `Networking` account. Two things still stay outside Terraform even here: registering an OU with Control Tower's landing zone baseline (Policy Staging needs this) is a Control Tower action, not something the AWS provider manages; and if a disposable account is needed to validate SCPs before trusting the attachment, it can be created the same way as `Networking` (`aws_organizations_account`) instead of through Account Factory — Control Tower enrollment doesn't matter for an account whose only job is sitting under an OU an SCP gets attached to.
-7. **Networking** (ADR-004 — still open in this repo). Decide the CIDR allocation plan, build the hub VPC in the `Networking` account, and peer it to each workload VPC as those get created. Not yet automated here; this is the next Terraform module to write.
+7. **Networking** (ADR-004). The CIDR allocation plan is decided, and there are two distinct VPC designs, each reached via a per-account provider alias rather than a separate Terraform backend per account. Workload accounts (Dev/Staging/Prod/Sandbox) use a reusable module, [`terraform/modules/vpc-baseline`](terraform/modules/vpc-baseline) (2 AZs, public/private subnets, no NAT Gateway yet), instantiated once each as those accounts get created. The `Networking` account is not a workload account, so it doesn't use that module: [`terraform/networking.tf`](terraform/networking.tf) builds its hub VPC directly, with private subnets only and no Internet Gateway — its job is centralizing VPC Peering (and later a Site-to-Site VPN to on-premises), not hosting internet-facing resources. Still open: the actual VPC Peering connections between the hub and each workload VPC.
+
+## Provisioning a New Workload Account
+
+The steps above cover bootstrapping this Landing Zone once. This is the recurring flow for adding one more account under it later — for example, a `MyAppDev` account for a new project's Dev environment:
+
+1. **Create the account.** Two paths, per ADR-005's scope split:
+   - Via **Account Factory** (Control Tower console) if it should get the standard CT baseline (CloudTrail/Config, eligible for Identity Center assignment right away) — the normal path for a real project account.
+   - Via Terraform (`aws_organizations_account`, the same pattern as `terraform/accounts.tf`) only if it deliberately shouldn't carry that baseline cost yet — the exception, not the default; the reason `Networking` used it.
+
+   Place it under the OU matching its environment tier (Dev/Staging/Prod), per ADR-001's environment-first structure. SCPs attached at the OU level apply automatically — no per-account SCP work needed.
+
+2. **Pick its CIDR.** The allocation table in ADR-004 currently reserves one `/20` per environment tier (Dev `10.1.0.0/20`, etc.), sized for a single account each. That table only anticipated one project; once a second project shares an environment tier (e.g. `MyAppDev` plus some future `OtherAppDev`, both under the Dev OU), it needs a fresh, non-overlapping `/20` added per project-environment pair — update ADR-004 at that point rather than improvising a CIDR.
+3. **Give Terraform a way in.** Add a provider alias in `main.tf` for the new account — `AWSControlTowerExecution` if it went through Account Factory, `OrganizationAccountAccessRole` if it didn't — same pattern as the `networking` alias.
+4. **Instantiate the VPC module.** A `module "myapp_dev_vpc" { source = "./modules/vpc-baseline" ... }` block, pointed at the new provider alias and its assigned CIDR.
+5. **Peer it to the hub.** Add the VPC Peering connection and route table entries between this VPC and the `Networking` hub (ADR-004). This part of ADR-004 is still open as of this writing, so there's no existing instantiation to copy yet — it'll be the first one.
+6. **Assign Identity Center access.** Not automatic (see note above) — add the account to the relevant groups' assignments (at minimum `platform-admins` → `AdministratorAccess`), via console or Terraform depending on whether Identity Center itself has been migrated into Terraform by then.
 
 ## Cost Discipline
 
-[Budget strategy and thresholds; CloudWatch billing alarms; cost considerations and rejected alternatives]
+Cost discipline is a first-class design constraint here, not an afterthought — the previous attempt at this project was torn down entirely because of an unexpected AWS Config bill (pre-3.0 Control Tower's Config Recorder recording global resources like IAM users/roles once per active region). Every ADR in this repo threads that lesson through:
 
-## Prerequisites
+**Guardrails in place before anything else was built:**
 
-[AWS account access requirements, IAM permissions needed, tools/CLI versions expected for anyone reviewing or replicating this setup]
+- A Billing Budget and a CloudWatch billing alarm were created _before_ running the Control Tower wizard, not after — see step 2 of [Rebuilding This From Scratch](#rebuilding-this-from-scratch). Threshold: under $10/month — this landing zone has no production traffic, so any spend above that is a signal something's misconfigured, not normal usage.
+- SCP #1 (restricted EC2 instance types, ADR-003) exists specifically to stop an accidental expensive instance launch — a typo or a copy-pasted doc example landing on a GPU/memory-optimized type in an environment that never needed one.
+
+**Decisions made specifically to avoid cost, not just to keep things simple:**
+
+- VPC Peering over Transit Gateway (ADR-004) — TGW has a real per-attachment-hour and per-GB cost that has nothing to justify it yet at this account count.
+- No NAT Gateway in any VPC yet (ADR-004) — a real hourly charge deferred until a workload actually lives in a private subnet and needs outbound access.
+- SCP #2 denies Transit Gateway creation org-wide (ADR-003/004) — turns "don't accidentally spin one up" from a policy into an enforced guardrail.
+- The `Networking` account was created directly through Organizations (`terraform/accounts.tf`), not Account Factory — it carries no Control Tower baseline (Config Recorder, CloudTrail) cost until it's deliberately enrolled later.
+- The Terraform state backend lives in the management account for now rather than a dedicated account (ADR-005) — one fewer account's baseline cost to carry, revisited later if this repo needs stronger state isolation.
+- Throwaway accounts were closed the moment they stopped being useful: `SCP-test` was decommissioned right after SCP automation was verified, rather than left running "just in case."
+
+**What I actually track:** the Budget alert is wired to notify by email — there's no separate weekly Cost Explorer ritual yet. At this account count and spend level, an alert-driven check is enough; a fixed review cadence becomes worth adding once there's more than a handful of accounts and workloads to watch.
+
+## Production Readiness Disclaimer
+
+This is a personal portfolio and learning lab, not a commercial or client-facing environment — I don't (yet) earn anything from it, and that shapes several decisions below on purpose. A "real" enterprise, production-ready landing zone built for an organization with actual revenue at stake would need more than what's here. Specifically:
+
+- **No NAT Gateway / no real HA for private workloads.** Private subnets have no outbound path at all right now (see Cost Discipline). Production would need at least one NAT Gateway per AZ, accepted as a real recurring cost.
+- **No WAF, Shield, or edge protection.** Nothing here is internet-facing yet, so there's nothing to protect. Any production web workload in front of an ALB/CloudFront would need this from day one.
+- **No GuardDuty, Security Hub, or centralized threat detection beyond Control Tower's default preventive controls.** Control Tower's 13 mandatory controls (ADR-003) protect its own infrastructure; they don't substitute for active threat detection across the org.
+- **No CI/CD pipeline for the Terraform in this repo.** Every `terraform apply` is run by hand, from my own machine, with my own credentials. A production IaC workflow would gate changes through pull requests, run `plan` in CI, and apply through a scoped service identity (OIDC), not a personal admin session.
+- **Single region, single approver.** Everything runs in one governed region (ADR-002), and I personally hold `platform-admins` → `AdministratorAccess` on every account. A real org would separate duties across teams and plan for multi-region DR.
+- **`Shared Services` account is reserved but empty.** ADR-001 planned for it; nothing runs there yet.
+- **Identity Center isn't federated with an external IdP.** Users are Identity Center-native, not SSO'd in from a corporate directory (Okta, Entra ID, etc.) — fine for one person, not for a team.
+- **Mandatory tagging is narrow.** SCP #3 (ADR-003) only enforces `Project`/`Environment` tags on EC2, RDS, and S3 — a real cost-allocation policy would need to cover a much wider service surface.
+- **CIDR plan is sized for a handful of accounts.** Five `/20`s, allocated by hand in a markdown table (ADR-004). A real enterprise would likely use AWS IPAM and a more deliberate hierarchical scheme as account count grows.
+
+None of these are things I don't know how to do — they're things I deliberately didn't do yet, because the cost or the complexity isn't justified by what this environment actually needs to prove right now. If/when this hosts something that matters, this list is the starting point for what changes.
 
 ## Repository Structure
 
 ```text
 ├── docs
-│   └── adr              # Architectural Decision Records
+│   ├── adr               # Architectural Decision Records
+│   └── evidence          # screenshots / CLI output backing the Appendix section
 ├── policies              # SCP JSON documents (tested, ready for Terraform reuse)
-├── README.md            # this file
+├── README.md             # this file
 └── terraform
-    ├── bootstrap         # one-time, local-state config that creates the remote state bucket
-    ├── main.tf           # provider + S3 backend
-    ├── ous.tf            # non-Control-Tower OUs
-    ├── scps.tf           # the 3 custom SCPs and their OU attachments
-    └── accounts.tf       # accounts provisioned directly through Organizations (e.g. Networking)
+    ├── bootstrap             # one-time, local-state config that creates the remote state bucket
+    ├── main.tf               # provider + S3 backend + per-account provider aliases
+    ├── variables.tf          # input variables (e.g. account emails) — no real values committed
+    ├── terraform.tfvars.example  # template for terraform.tfvars (gitignored, holds real values)
+    ├── ous.tf                # non-Control-Tower OUs
+    ├── scps.tf               # the 3 custom SCPs and their OU attachments
+    ├── accounts.tf           # accounts provisioned directly through Organizations (e.g. Networking)
+    ├── networking.tf         # Networking hub VPC — private subnets only, no IGW (ADR-004)
+    └── modules
+        └── vpc-baseline      # workload VPC module (public + private subnets, IGW, no NAT Gateway yet)
 ```
 
 ## Status & Progress
@@ -156,11 +242,20 @@ The walk-through above narrates what actually happened, import steps and all. Re
 - [x] ADR-004-Networking-Strategy Documented — VPC Peering hub-and-spoke via a `Networking` account, no exception to the deny-Transit-Gateway SCP even for that account
 - [x] **Terraform: provision the `Networking` account** ([`terraform/accounts.tf`](terraform/accounts.tf)) — created directly through Organizations, not Account Factory, so no Control Tower baseline cost until/unless it's separately enrolled
 - [x] Broaden the deny-Transit-Gateway SCP to every OU except Security (Infrastructure, Sandbox, Workloads, Policy Staging) — no exception for the `Networking` account, per ADR-004
+- [x] Decide the CIDR allocation plan (ADR-004) — one non-overlapping `/20` per account (Networking `10.0.0.0/20`, Dev `10.1.0.0/20`, Staging `10.2.0.0/20`, Prod `10.3.0.0/20`, Sandbox `10.4.0.0/20`)
+- [x] **Terraform: reusable VPC baseline module for workload accounts** ([`terraform/modules/vpc-baseline`](terraform/modules/vpc-baseline)) — 2 AZs, public + private `/24` subnets, one IGW, no NAT Gateway yet (private subnets have no outbound route). For Dev/Staging/Prod/Sandbox once those accounts exist — not used for `Networking` itself, see below
+- [x] **Terraform: cross-account provider alias** — `networking` alias in [`terraform/main.tf`](terraform/main.tf) assumes `OrganizationAccountAccessRole` in the `Networking` account, so one shared backend/state can still create resources there instead of a separate backend per account
+- [x] **Terraform: apply the `Networking` account's hub VPC** ([`terraform/networking.tf`](terraform/networking.tf)) — private-subnets-only, no IGW/public subnets (this account isn't a workload account, so it deliberately doesn't use `vpc-baseline` — see ADR-004). Applied 2026-09-04: `aws_vpc.networking_hub` (`vpc-0c903fd7b3e108d8e`), 2 private subnets, 1 route table, 2 associations — clean apply, no errors
+- [ ] Assign Identity Center access to the `Networking` account — `platform-admins` → `AdministratorAccess`, done manually via console like the other accounts (see note above; not automatic just because the account exists)
+- [ ] Invite the existing Route 53 (DNS) account into the org, under Infrastructure OU — the hosted zone itself doesn't move, only the account joins
+- [ ] Create the `Shared Services` account under Infrastructure OU (planned in ADR-001, still empty)
+- [ ] Create Dev/Staging/Prod accounts via Account Factory, then instantiate `vpc-baseline` for each via their own `AWSControlTowerExecution`-based provider alias
+- [ ] Build the actual VPC Peering connections between the `Networking` hub and each workload VPC, per ADR-004
 - [x] Improve the Control Tower's administrative access model
   - [x] **IAM Identity Center — define groups and permission set model**
     - Created Identity Center groups: `platform-admins`, `developers`, `readonly-auditors`
     - Created permission sets: `AdministratorAccess` (AWS managed), `ReadOnlyAccess` (AWS managed), `DeveloperAccess` (custom, scoped to EC2/S3/Lambda with `iam:PassRole` restricted to `lambda.amazonaws.com` and `ec2.amazonaws.com`)
-    - Assigned permission sets to groups per account (Sandbox/Dev/Staging/Prod pending account creation):
+    - Assigned permission sets to groups per account (Sandbox/Dev/Staging/Prod pending account creation; `SCP-test` has since been decommissioned — table reflects the assignment as it existed during SCP testing):
 
       | Group             | management          | SCP-test            | Sandbox             | Dev                 | Staging             | Prod                |
       | ----------------- | ------------------- | ------------------- | ------------------- | ------------------- | ------------------- | ------------------- |
@@ -168,11 +263,13 @@ The walk-through above narrates what actually happened, import steps and all. Re
       | developers        | ReadOnlyAccess      | —                   | DeveloperAccess     | DeveloperAccess     | ReadOnlyAccess      | ReadOnlyAccess      |
       | readonly-auditors | ReadOnlyAccess      | ReadOnlyAccess      | ReadOnlyAccess      | ReadOnlyAccess      | ReadOnlyAccess      | ReadOnlyAccess      |
 
+    Note: this assignment is never automatic. Creating an account — through Account Factory or directly via `aws_organizations_account` (e.g. `Networking`, see below) — doesn't grant Identity Center users or groups any access to it. Each account needs an explicit group + permission set assignment before it shows up in anyone's Identity Center portal; until then it's only reachable by assuming its cross-account role directly (e.g. `OrganizationAccountAccessRole`).
+
   - [x] **IAM Identity Center — replace auto-created user with real users**
     - Created user `carlos.ramirez` (primary admin) → member of `platform-admins` + `developers`
     - Created user `carlosvsccnp` (developer persona) → member of `developers` only
     - Verified: `carlos.ramirez` sees management + SCP-test with correct permission sets; `carlosvsccnp` sees management with `ReadOnlyAccess` only
-    - Deleted the auto-created user `carloslrm+ct26-mgmt@gmail.com` tied to the root email
+    - Deleted the auto-created user tied to the management account's root email
     - Customized the Identity Center access portal URL to `https://mylz2027.awsapps.com/start`
   - [x] **IAM Identity Center — clean up stale permission set assignments**
     - `AWSOrganizationFullAccess` on SCP-test belongs to the `AWSControlTowerAdmins` group, created and managed by Control Tower — do not remove
@@ -194,8 +291,19 @@ The walk-through above narrates what actually happened, import steps and all. Re
 
 ## What I Learned
 
-[Insights and lessons accumulated during implementation: what surprised you, what would you do differently, trade-offs discovered in practice, etc.]
+- The AWS Config cost surprise from the first failed attempt wasn't a vague "watch your bill" lesson — it had a specific root cause (pre-3.0 Control Tower's Config Recorder recording global IAM resources once per active region). Understanding the _mechanism_ before rebuilding, not just avoiding it, is what let this attempt turn "cost discipline" into concrete guardrails instead of a good intention.
+- Environment-first OU design (Dev/Staging/Prod rather than per-project) only pays off once you actually add a second project — see the CIDR allocation gap this exposed in [Provisioning a New Workload Account](#provisioning-a-new-workload-account). The design was right; the first version of the CIDR plan hadn't fully thought through what "environment-first" implies for multiple projects sharing one tier.
+- Control Tower's actual wizard behavior didn't match the plan: it asks for a Config Aggregator account and a CloudTrail admin account as two separate roles, not one generic "Audit" account. Combined with a session token expiring mid-wizard, that turned a planned 2-account setup into 3 accounts with different names than intended (`LogArchive` + `Aggregator account`, plus a closed, inert `Audit` account left over from the failed attempt). The lesson wasn't to avoid the deviation — it was to document it as it actually happened (ADR-002) instead of quietly editing history to match the original plan.
+- If I started this over today, I'd write ADR-004's CIDR allocation as "one `/20` per environment-per-project" from the start, instead of "one `/20` per environment," since the gap only became visible once a second project was hypothetically added — cheaper to design for it up front than to patch the table later.
+- Narrowing vs. broadening SCP scope after manual testing (ADR-003) felt different in practice than on paper: it's tempting to attach a guardrail everywhere "to be safe," but testing surfaced concrete reasons to narrow two of the three SCPs (dropping Sandbox from the EC2-type restriction, scoping mandatory tags to Workloads only) while broadening the third (Transit Gateway denial, specifically to remove a tempting exception for the `Networking` account). The scope that looked obvious before testing wasn't the scope that survived it.
 
 ## Appendix / Evidence
 
-[Links to docs/evidence/ for verification: console screenshots, terraform plan outputs, AWS Config recordings, etc.]
+Supporting evidence lives under [`docs/evidence/`](docs/evidence/). This is a living list — items get checked off as evidence is captured, not retroactively marked done.
+
+- [x] Console screenshot: [final Organizations OU/account tree](docs/evidence/lz2026-OUs-accounts.png)
+- [ ] `terraform plan` / `terraform apply` output — at least one clean run per major milestone (bootstrap, SCP attachment, `Networking` account creation)
+- [ ] Console screenshots: IAM Identity Center portal (groups + permission set assignments), CloudWatch billing alarm and Budget configuration
+- [ ] SCP verification evidence: a denied API call (positive test) and an allowed one (negative test) for each of the 3 SCPs, from the Policy Staging testing round
+- [ ] `aws organizations list-accounts` / `list-organizational-units-for-parent` output as a point-in-time snapshot of the final structure
+- [ ] Once the `Networking` hub VPC and first workload VPC exist: a screenshot or `describe-vpc-peering-connections` output showing the peering actually working

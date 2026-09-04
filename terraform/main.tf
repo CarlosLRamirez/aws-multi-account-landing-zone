@@ -35,3 +35,26 @@ provider "aws" {
   region  = "us-east-1"
   profile = "mgmt-admin"
 }
+
+# Cross-account providers, one alias per member account that needs resources
+# created directly in it (ADR-004/ADR-005: assume-role from the management
+# account's own state, rather than a separate Terraform root/backend per
+# account — one apply can reach every account this project manages).
+#
+# Networking was created via `aws_organizations_account` (accounts.tf), not
+# Account Factory, so it only has the default `OrganizationAccountAccessRole`
+# that Organizations grants the management account on every member account it
+# creates — not Control Tower's `AWSControlTowerExecution` role. Accounts
+# created later via Account Factory (Dev/Staging/Prod) will need their own
+# alias using that CT role instead.
+provider "aws" {
+  alias  = "networking"
+  region = "us-east-1"
+
+  assume_role {
+    role_arn = "arn:aws:iam::${aws_organizations_account.networking.id}:role/OrganizationAccountAccessRole"
+  }
+
+  profile = "mgmt-admin"
+}
+

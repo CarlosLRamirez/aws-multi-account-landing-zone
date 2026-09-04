@@ -32,9 +32,22 @@ Use **VPC Peering**, not Transit Gateway, for inter-account connectivity, arrang
 
 At the current scale — a handful of accounts, no meaningful east-west bandwidth requirement — VPC Peering's simplicity and $0 fixed cost win over Transit Gateway's centralized route management and per-attachment/per-GB charges.
 
-**Left open, to be decided when the `Networking` account actually exists:**
+**CIDR allocation.** Each account gets its own non-overlapping `/20`, sized generously since VPC Peering requires non-overlapping ranges up front — there's no cheap way to renumber a VPC after peering connections and route tables already reference it:
 
-- CIDR allocation plan across accounts (peering requires non-overlapping ranges, so this has to be settled before the first VPC is created, just not as part of this ADR)
+| Account | CIDR |
+| --- | --- |
+| `Networking` (hub) | `10.0.0.0/20` |
+| Dev | `10.1.0.0/20` |
+| Staging | `10.2.0.0/20` |
+| Prod | `10.3.0.0/20` |
+| Sandbox | `10.4.0.0/20` |
+
+**Two different internal layouts, not one, because the `Networking` account isn't a workload account:**
+
+- **Workload VPCs** (Dev, Staging, Prod, Sandbox): 2 AZs, one public and one private `/24` subnet per AZ, one Internet Gateway. No NAT Gateway yet — private subnets get a route table with only the local route, so they have no outbound path until a workload actually needs one. That's a deliberate, revisitable gap, not an oversight: NAT Gateway has a real hourly cost this Landing Zone doesn't need to carry before anything lives in a private subnet. Implemented as a reusable Terraform module (`terraform/modules/vpc-baseline`), instantiated once per workload account.
+- **The `Networking` hub VPC** is deliberately not built from that module. This account never runs application workloads — its only job is to be the peering nexus, and later the attachment point for a Site-to-Site VPN to on-premises — so it gets no Internet Gateway and no public subnets: nothing in it is meant to be internet-facing. Just private subnets across 2 AZs, existing as attachment points for peering routes to each spoke and, later, propagated routes from a Virtual Private Gateway. Kept as plain resources in `terraform/networking.tf` rather than force-fit into `vpc-baseline`, since a workload-shaped module (IGW, public subnets) doesn't describe what this account is for.
+
+**Cross-account Terraform.** Each account's VPC is created from the same Terraform state as everything else in this repo (ADR-005), via a per-account AWS provider alias that assumes a cross-account role rather than giving each account its own Terraform backend. `Networking` was created directly through `aws_organizations_account` (not Account Factory), so it only has the default `OrganizationAccountAccessRole` Organizations grants automatically — not Control Tower's `AWSControlTowerExecution`. Accounts created later via Account Factory (Dev, Staging, Prod) will need their own alias using that role instead once they exist. Keeping one shared backend, rather than a backend per account, was chosen for the same cost-discipline reason ADR-005 gives for not splitting state in the first place: an extra S3 bucket and lockfile per account buys isolation this project doesn't need yet.
 
 ## Consequences
 
