@@ -4,8 +4,6 @@
 
 This repository documents the process of implementing an **AWS Control Tower Landing Zone**. It includes the implementation walkthrough, the Terraform Infrastructure as Code (IaC), and the architectural decision records (ADRs). This landing zone serves as a personal portfolio and learning lab, built to resemble an enterprise-grade structure following best practices for governance and security in multi-account, multi-stage cloud environments. The idea is that it serves as the long-term foundation for real personal projects in the future, and not something to create and destroy.
 
-**Status: v1.0 — documentation complete.** Everything described below reflects what's actually built and verified as of this writing. The landing zone itself keeps growing on top of this foundation — see the open items at the end of [Status & Progress](#status--progress) for what's next (inviting the existing Route 53 account, standing up `Shared Services`, provisioning Dev/Staging/Prod, and building the VPC Peering connections).
-
 Although a step-by-step implementation guide is planned, this document does not intend to be that; rather, it covers the general steps taken, the decision-making process, the overall architecture and the lessons learned.
 
 ## Outcome
@@ -55,53 +53,26 @@ Root
 - [ADR-004: Networking Strategy (VPC Peering over TGW)](docs/adr/ADR-004-Networking-Strategy.md)
 - [ADR-005: IaC Strategy (Terraform)](docs/adr/ADR-005-IaC-Strategy.md)
 
-## Prerequisites
-
-To review, replicate, or extend this repository, you'd need:
-
-- An AWS account able to become (or already serving as) an Organizations management account, with billing/payment configured.
-- IAM permissions sufficient to enable AWS Organizations, run the Control Tower landing zone wizard, and administer IAM Identity Center — effectively account-root-level access during initial setup.
-- **Tools:** AWS CLI v2, Terraform `>= 1.10` (native S3 lockfile locking, no DynamoDB table), the `hashicorp/aws` provider `~> 5.0`.
-- A named AWS CLI profile with credentials for the management account (this repo uses a profile named `mgmt-admin`).
-- A `terraform/terraform.tfvars` (gitignored, not in this repo) supplying real values for variables like `networking_account_email` — copy `terraform/terraform.tfvars.example` and fill in your own. Account emails aren't hardcoded in `.tf` files on purpose.
-- Familiarity with AWS Organizations, SCPs, and core Control Tower concepts is assumed — this README documents decisions and trade-offs, not AWS fundamentals.
-- A configured Billing Budget and CloudWatch billing alarm _before_ running the Control Tower wizard — see [Cost Discipline](#cost-discipline).
-
 ## Implementation Walk-through
 
-The decisions above (ADR-001 through ADR-005) were made before touching the console. What follows is how they got deployed.
+High-level implementation process based on the decisions made initially
 
 ### 1. Account foundation and Control Tower deployment
 
 - Created a new AWS account to serve as the Management Account.
 - Configured MFA on the root user.
-- Created an IAM user with `AdministratorAccess` and MFA as a bootstrap admin for the initial setup.
+- Created an temporary IAM user with `AdministratorAccess` and MFA as a bootstrap admin for the initial setup.
 - Enabled IAM billing access so the IAM user could view billing information.
 - Set up a Budget, CloudWatch billing alarms, and a billing alarm as a cost safeguard.
 - Ran the Control Tower wizard from the Management Account. The wizard created two managed accounts:
   - `LogArchive`: holds CloudTrail logs.
   - `Aggregator account`: handles Config aggregation.
-  - Note: an `Audit` account was created during this process and later closed. It still appears in the Organization with status Closed; AWS automatically removes closed accounts 90 days after closure, so the plan is to let it drop off on its own.
+  - Note: An `Audit` account was created during firsts attempts to run of the wizard and was closed shortly after. It still appears in the Organization with status Closed; AWS automatically removes closed accounts 90 days after closure, so the plan is to let it drop off on its own. Discovered that Control Tower v4.0 no longer requires a separate `Audit` account.
 - After Control Tower finished, received an IAM Identity Center invitation with an auto-generated user tied to the management account root email.
 - Created the OUs not provisioned by the wizard, per ADR-001: Infrastructure, Workloads, Dev, Staging, Prod, Policy Staging.
 - Registered the Policy Staging OU with Control Tower to include it in the landing zone baseline.
 
-### 2. Guardrails: designing and testing custom SCPs
-
-- Used Account Factory to create the `SCP-test` account inside Policy Staging — an isolated account for testing SCPs before attaching them to their target OUs.
-- Created and tested three custom SCPs manually in Policy Staging (attach to Policy Staging OU → test in the SCP-test account → detach), per ADR-003. Both positive and negative tests passed for all three. The exact policy documents are kept under [`policies/`](policies/) for reuse once this is automated with Terraform:
-  - SCP #1 — [Restricted EC2 instance types](policies/scp-1-restricted-ec2-instance-types.json)
-  - SCP #2 — [Deny Transit Gateway creation](policies/scp-2-deny-transit-gateway.json)
-  - SCP #3 — [Require mandatory resource tags](policies/scp-3-require-mandatory-tags.json)
-
-### 3. Introducing Terraform (ADR-005)
-
-- Bootstrapped a remote state backend: an S3 bucket with versioning, blocked public access, SSE-S3 encryption, and native S3 lockfile locking (no DynamoDB table needed as of Terraform 1.10+).
-- Codified the existing OU tree and the 3 SCP documents as `.tf` resources, then `terraform import`-ed each one so Terraform adopted what already existed without recreating it — [`terraform/ous.tf`](terraform/ous.tf), [`terraform/scps.tf`](terraform/scps.tf). `terraform plan` confirmed zero changes before Terraform was allowed to touch anything.
-- Attached SCP #1, #2, and #3 to their real target OUs — the actual guardrail-activation step, kept deliberately separate from the import work. Deny Transit Gateway ended up with the widest scope (every OU except Security, no exception for the `Networking` account, per ADR-004); mandatory tags attaches to Workloads; restricted EC2 types attaches to Dev and Staging.
-- Decommissioned the `SCP-test` account once the SCP automation was verified — closed directly via Organizations, the same pattern used for the earlier `Audit` account.
-
-### 4. Identity and access hardening
+### 2. Identity and access hardening
 
 - Replaced the auto-generated Identity Center user with a proper group-based access model:
   - Created three groups: `platform-admins`, `developers`, `readonly-auditors`.
@@ -115,6 +86,21 @@ The decisions above (ADR-001 through ADR-005) were made before touching the cons
   - Created the `breakglass` IAM user with console access, MFA, and a single permission: `sts:AssumeRole` targeting `BreakGlassAdminRole`.
   - Deleted the original IAM bootstrap user.
   - Verified the fallback flow: `breakglass` login + MFA → Switch role → full admin access.
+
+### 3. Guardrails: designing and testing custom SCPs
+
+- Used Account Factory to create the `SCP-test` account inside Policy Staging — an isolated account for testing SCPs before attaching them to their target OUs.
+- Created and tested three custom SCPs manually in Policy Staging (attach to Policy Staging OU → test in the SCP-test account → detach), per ADR-003. Both positive and negative tests passed for all three. The exact policy documents are kept under [`policies/`](policies/) for reuse once this is automated with Terraform:
+  - SCP #1 — [Restricted EC2 instance types](policies/scp-1-restricted-ec2-instance-types.json)
+  - SCP #2 — [Deny Transit Gateway creation](policies/scp-2-deny-transit-gateway.json)
+  - SCP #3 — [Require mandatory resource tags](policies/scp-3-require-mandatory-tags.json)
+
+### 4. Introducing Terraform (ADR-005)
+
+- Bootstrapped a remote state backend: an S3 bucket with versioning, blocked public access, SSE-S3 encryption, and native S3 lockfile locking (no DynamoDB table needed as of Terraform 1.10+).
+- Codified the existing OU tree and the 3 SCP documents as `.tf` resources, then `terraform import`-ed each one so Terraform adopted what already existed without recreating it — [`terraform/ous.tf`](terraform/ous.tf), [`terraform/scps.tf`](terraform/scps.tf). `terraform plan` confirmed zero changes before Terraform was allowed to touch anything.
+- Attached SCP #1, #2, and #3 to their respective target OUs, per the scope decided in ADR-003.
+- Decommissioned the `SCP-test` account once the SCP automation was verified — closed via console directly on Organizations, the same pattern used for the earlier `Audit` account.
 
 ## Rebuilding This From Scratch
 
@@ -307,3 +293,8 @@ Supporting evidence lives under [`docs/evidence/`](docs/evidence/). This is a li
 - [ ] SCP verification evidence: a denied API call (positive test) and an allowed one (negative test) for each of the 3 SCPs, from the Policy Staging testing round
 - [ ] `aws organizations list-accounts` / `list-organizational-units-for-parent` output as a point-in-time snapshot of the final structure
 - [ ] Once the `Networking` hub VPC and first workload VPC exist: a screenshot or `describe-vpc-peering-connections` output showing the peering actually working
+
+---
+
+> **Status: v1.0 — documentation complete.**
+> Everything described below reflects what's actually built and verified as of this writing. The landing zone itself keeps growing on top of this foundation — see the open items at the end of [Status & Progress](#status--progress) for what's next (inviting the existing Route 53 account, standing up `Shared Services`, provisioning Dev/Staging/Prod, and building the VPC Peering connections).
