@@ -26,7 +26,7 @@ This Landing Zone consists of:
 - **A documented, reusable pattern** (this README + ADR-004) for provisioning the next account and its standard network configuration
 - The `Networking` account with its VPC configured (via Terraform), ready to serve as the hub for the future VPC peering connections needed from the workload accounts (Dev, Staging, Prod, and Sandbox)
 
-This is Month 1 of a broader roadmap to move from a Technical Program Manager role into Solutions Architecture — the primary evidence artifact for that transition, not a throwaway lab. The Appendix below links the supporting evidence (console screenshots, `terraform plan`/`apply` output, SCP verification).
+The Appendix below links the supporting evidence (console screenshots, `terraform plan`/`apply` output, SCP verification).
 
 ## Architecture
 
