@@ -78,9 +78,9 @@ High-level implementation process based on the decisions made initially
   - Created three groups: `platform-admins`, `developers`, `readonly-auditors`.
   - Created three permission sets: `AdministratorAccess`, `ReadOnlyAccess`, and a custom `DeveloperAccess` scoped to EC2, S3, and Lambda with `iam:PassRole` restricted to trusted services only.
   - Assigned groups to accounts with the appropriate permission sets.
-  - Created user `carlos.ramirez` (member of `platform-admins` and `developers`) and `carlosvsccnp` (member of `developers` only) to simulate different access personas.
+  - Created user `admin-user` (member of `platform-admins` and `developers`) and `dev-user` (member of `developers` only) to simulate different access personas.
   - Deleted the auto-generated user tied to the root email.
-  - Customized the Identity Center portal URL to `https://mylz2027.awsapps.com/start`.
+  - Customized the Identity Center portal URL to `https://mylandingzone2026.awsapps.com/start`.
 - Replaced the IAM bootstrap user with a hardened break-glass access model:
   - Created `BreakGlassAdminRole` with `AdministratorAccess` and a trust policy that requires MFA, scoped exclusively to the `breakglass` IAM user.
   - Created the `breakglass` IAM user with console access, MFA, and a single permission: `sts:AssumeRole` targeting `BreakGlassAdminRole`.
@@ -89,7 +89,7 @@ High-level implementation process based on the decisions made initially
 
 ### 3. Guardrails: designing and testing custom SCPs
 
-- Used Account Factory to create the `SCP-test` account inside Policy Staging — an isolated account for testing SCPs before attaching them to their target OUs.
+- Used Account Factory to create the `SCP-test` account inside Policy Staging — an isolated account for testing SCPs before attaching them to their target OUs — and added it to the existing `platform-admins` group with its respective permission sets.
 - Created and tested three custom SCPs manually in Policy Staging (attach to Policy Staging OU → test in the SCP-test account → detach), per ADR-003. Both positive and negative tests passed for all three. The exact policy documents are kept under [`policies/`](policies/) for reuse once this is automated with Terraform:
   - SCP #1 — [Restricted EC2 instance types](policies/scp-1-restricted-ec2-instance-types.json)
   - SCP #2 — [Deny Transit Gateway creation](policies/scp-2-deny-transit-gateway.json)
@@ -101,6 +101,15 @@ High-level implementation process based on the decisions made initially
 - Codified the existing OU tree and the 3 SCP documents as `.tf` resources, then `terraform import`-ed each one so Terraform adopted what already existed without recreating it — [`terraform/ous.tf`](terraform/ous.tf), [`terraform/scps.tf`](terraform/scps.tf). `terraform plan` confirmed zero changes before Terraform was allowed to touch anything.
 - Attached SCP #1, #2, and #3 to their respective target OUs, per the scope decided in ADR-003.
 - Decommissioned the `SCP-test` account once the SCP automation was verified — closed via console directly on Organizations, the same pattern used for the earlier `Audit` account.
+
+### 5. Networking foundation (ADR-004)
+
+- Created the `Networking` account under Infrastructure OU directly via Terraform (`aws_organizations_account`, [`terraform/accounts.tf`](terraform/accounts.tf)) instead of Account Factory, so it carries no Control Tower baseline cost until deliberately enrolled later.
+- Added a per-account provider alias in `terraform/main.tf`, assuming `OrganizationAccountAccessRole` to reach the `Networking` account from the shared state/backend.
+- Decided the CIDR allocation plan: one non-overlapping `/20` per account (`Networking` hub `10.0.0.0/20`, Dev/Staging/Prod/Sandbox each with their own).
+- Built the hub VPC directly in [`terraform/networking.tf`](terraform/networking.tf) — not the `vpc-baseline` module, since this account isn't a workload account: private subnets only across 2 AZs, no Internet Gateway. `terraform apply` clean.
+- Wrote a reusable [`terraform/modules/vpc-baseline`](terraform/modules/vpc-baseline) module (2 AZs, public + private subnets, one IGW, no NAT Gateway yet) as the standard template for future workload accounts (Dev/Staging/Prod/Sandbox) — not yet instantiated, since none of those accounts exist yet.
+- Still open: the actual VPC Peering connections between the hub and each future workload VPC.
 
 ## Rebuilding This From Scratch
 
