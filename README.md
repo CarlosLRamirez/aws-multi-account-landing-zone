@@ -52,6 +52,7 @@ Root
 - [ADR-003: Guardrail Strategy](docs/adr/ADR-003-Guardrail-Strategy.md)
 - [ADR-004: Networking Strategy (VPC Peering over TGW)](docs/adr/ADR-004-Networking-Strategy.md)
 - [ADR-005: IaC Strategy (Terraform)](docs/adr/ADR-005-IaC-Strategy.md)
+- [IP Address Plan](docs/ip-address-plan.md) — living reference for CIDR allocation and per-VPC subnet layouts (companion to ADR-004)
 
 ## Implementation Walk-through
 
@@ -105,10 +106,10 @@ High-level implementation process based on the decisions made initially
 ### 5. Networking foundation (ADR-004)
 
 - Created the `Networking` account under Infrastructure OU directly via Terraform (`aws_organizations_account`, [`terraform/accounts.tf`](terraform/accounts.tf)) instead of Account Factory, so it carries no Control Tower baseline cost until deliberately enrolled later.
-- Added a per-account provider alias in `terraform/main.tf`, assuming `OrganizationAccountAccessRole` to reach the `Networking` account from the shared state/backend.
-- Decided the CIDR allocation plan: one non-overlapping `/20` per account (`Networking` hub `10.0.0.0/20`, Dev/Staging/Prod/Sandbox each with their own).
-- Built the hub VPC directly in [`terraform/networking.tf`](terraform/networking.tf) — not the `vpc-baseline` module, since this account isn't a workload account: private subnets only across 2 AZs, no Internet Gateway. `terraform apply` clean.
-- Wrote a reusable [`terraform/modules/vpc-baseline`](terraform/modules/vpc-baseline) module (2 AZs, public + private subnets, one IGW, no NAT Gateway yet) as the standard template for future workload accounts (Dev/Staging/Prod/Sandbox) — not yet instantiated, since none of those accounts exist yet.
+- Added `aws.networking` provider alias in `main.tf`, assuming `OrganizationAccountAccessRole` from the management account to create resources directly in the Networking account within the same Terraform state.
+- Decided the CIDR allocation plan: a hierarchical scheme reserving growth space per environment, not a flat `/20` per account — full table in [`docs/ip-address-plan.md`](docs/ip-address-plan.md).
+- Built the hub VPC directly in [`terraform/networking.tf`](terraform/networking.tf) — not the `vpc-baseline` module, since this account isn't a workload account: private + "public (future)" subnets across 3 AZs, no Internet Gateway attached yet. `terraform apply` clean.
+- Wrote two reusable modules as the standard templates for future accounts, neither instantiated yet since those accounts don't exist: [`terraform/modules/vpc-baseline`](terraform/modules/vpc-baseline) (3 AZs, Public/App/Data tiers, one IGW, no NAT Gateway yet) for Dev/Staging/Prod, and [`terraform/modules/vpc-sandbox`](terraform/modules/vpc-sandbox) (2 AZs, smaller `/23` footprint) for Sandbox.
 - Still open: the actual VPC Peering connections between the hub and each future workload VPC.
 
 ## Rebuilding This From Scratch
@@ -121,7 +122,7 @@ The walk-through above narrates what actually happened, import steps and all. Re
 4. **Harden Identity Center and IAM right away.** The wizard already enables Identity Center, so set up the `platform-admins` / `developers` / `readonly-auditors` groups, permission sets, and real users immediately — that becomes the primary access path. Only once that's working, delete the auto-generated root-email user and retire the temporary bootstrap IAM user into the `breakglass` + `BreakGlassAdminRole` model. Doing this before anything else means every step from here on is done through a hardened identity, not a throwaway admin user.
 5. **Stand up Terraform.** Apply `terraform/bootstrap` first — it creates the remote-state S3 bucket and keeps its own state local, since it can't store its state in the bucket it's creating. Then `terraform init` the main project (`terraform/main.tf`), which points at that bucket and uses native S3 lockfile locking.
 6. **Apply the rest of Terraform in one pass** — `ous.tf`, `scps.tf`, `accounts.tf`. A from-scratch org has none of this yet, so there's no import dance like this repo went through: one `terraform apply` creates every remaining OU (Infrastructure, Workloads, Dev, Staging, Prod, Policy Staging), the 3 SCPs and their attachments, and the `Networking` account. Two things still stay outside Terraform even here: registering an OU with Control Tower's landing zone baseline (Policy Staging needs this) is a Control Tower action, not something the AWS provider manages; and if a disposable account is needed to validate SCPs before trusting the attachment, it can be created the same way as `Networking` (`aws_organizations_account`) instead of through Account Factory — Control Tower enrollment doesn't matter for an account whose only job is sitting under an OU an SCP gets attached to.
-7. **Networking** (ADR-004). The CIDR allocation plan is decided, and there are two distinct VPC designs, each reached via a per-account provider alias rather than a separate Terraform backend per account. Workload accounts (Dev/Staging/Prod/Sandbox) use a reusable module, [`terraform/modules/vpc-baseline`](terraform/modules/vpc-baseline) (2 AZs, public/private subnets, no NAT Gateway yet), instantiated once each as those accounts get created. The `Networking` account is not a workload account, so it doesn't use that module: [`terraform/networking.tf`](terraform/networking.tf) builds its hub VPC directly, with private subnets only and no Internet Gateway — its job is centralizing VPC Peering (and later a Site-to-Site VPN to on-premises), not hosting internet-facing resources. Still open: the actual VPC Peering connections between the hub and each workload VPC.
+7. **Networking** (ADR-004, CIDR detail in [`docs/ip-address-plan.md`](docs/ip-address-plan.md)). Three distinct VPC designs, each reached via a per-account provider alias rather than a separate Terraform backend per account. Workload accounts (Dev/Staging/Prod) use [`terraform/modules/vpc-baseline`](terraform/modules/vpc-baseline) (3 AZs, Public/App/Data tiers, no NAT Gateway yet); Sandbox uses the smaller [`terraform/modules/vpc-sandbox`](terraform/modules/vpc-sandbox) (2 AZs, `/23`). Neither is instantiated yet — those accounts don't exist. The `Networking` account is not a workload account, so it uses neither module: [`terraform/networking.tf`](terraform/networking.tf) builds its hub VPC directly, with private + "public (future)" subnets and no Internet Gateway attached yet — its job is centralizing VPC Peering (and later a Site-to-Site VPN to on-premises), not hosting internet-facing resources. Still open: the actual VPC Peering connections between the hub and each workload VPC.
 
 ## Provisioning a New Workload Account
 
@@ -133,7 +134,7 @@ The steps above cover bootstrapping this Landing Zone once. This is the recurrin
 
    Place it under the OU matching its environment tier (Dev/Staging/Prod), per ADR-001's environment-first structure. SCPs attached at the OU level apply automatically — no per-account SCP work needed.
 
-2. **Pick its CIDR.** The allocation table in ADR-004 currently reserves one `/20` per environment tier (Dev `10.1.0.0/20`, etc.), sized for a single account each. That table only anticipated one project; once a second project shares an environment tier (e.g. `MyAppDev` plus some future `OtherAppDev`, both under the Dev OU), it needs a fresh, non-overlapping `/20` added per project-environment pair — update ADR-004 at that point rather than improvising a CIDR.
+2. **Pick its CIDR.** The allocation table in [`docs/ip-address-plan.md`](docs/ip-address-plan.md) reserves a pool of 8 slots per environment tier (Dev, Staging, Prod each get 8× `/20`; Sandbox gets 8× `/23`) specifically so a second account sharing a tier (e.g. `MyAppDev` alongside the existing Dev account) takes the next unused slot in that pool rather than requiring a new CIDR block to be carved out. Mark the slot as in-use in that document when it's assigned.
 3. **Give Terraform a way in.** Add a provider alias in `main.tf` for the new account — `AWSControlTowerExecution` if it went through Account Factory, `OrganizationAccountAccessRole` if it didn't — same pattern as the `networking` alias.
 4. **Instantiate the VPC module.** A `module "myapp_dev_vpc" { source = "./modules/vpc-baseline" ... }` block, pointed at the new provider alias and its assigned CIDR.
 5. **Peer it to the hub.** Add the VPC Peering connection and route table entries between this VPC and the `Networking` hub (ADR-004). This part of ADR-004 is still open as of this writing, so there's no existing instantiation to copy yet — it'll be the first one.
@@ -171,7 +172,7 @@ This is a personal portfolio and learning lab, not a commercial or client-facing
 - **`Shared Services` account is reserved but empty.** ADR-001 planned for it; nothing runs there yet.
 - **Identity Center isn't federated with an external IdP.** Users are Identity Center-native, not SSO'd in from a corporate directory (Okta, Entra ID, etc.) — fine for one person, not for a team.
 - **Mandatory tagging is narrow.** SCP #3 (ADR-003) only enforces `Project`/`Environment` tags on EC2, RDS, and S3 — a real cost-allocation policy would need to cover a much wider service surface.
-- **CIDR plan is sized for a handful of accounts.** Five `/20`s, allocated by hand in a markdown table (ADR-004). A real enterprise would likely use AWS IPAM and a more deliberate hierarchical scheme as account count grows.
+- **CIDR plan is hand-allocated, not IPAM-managed.** The hierarchical scheme in [`docs/ip-address-plan.md`](docs/ip-address-plan.md) pre-reserves growth pools per environment, but it's still a markdown table maintained by hand. A real enterprise at larger account counts would use AWS IPAM to manage and enforce allocation instead.
 
 None of these are things I don't know how to do — they're things I deliberately didn't do yet, because the cost or the complexity isn't justified by what this environment actually needs to prove right now. If/when this hosts something that matters, this list is the starting point for what changes.
 
@@ -179,8 +180,9 @@ None of these are things I don't know how to do — they're things I deliberatel
 
 ```text
 ├── docs
-│   ├── adr               # Architectural Decision Records
-│   └── evidence          # screenshots / CLI output backing the Appendix section
+│   ├── adr                    # Architectural Decision Records
+│   ├── ip-address-plan.md     # living CIDR allocation reference (companion to ADR-004)
+│   └── evidence               # screenshots / CLI output backing the Appendix section
 ├── policies              # SCP JSON documents (tested, ready for Terraform reuse)
 ├── README.md             # this file
 └── terraform
@@ -191,9 +193,10 @@ None of these are things I don't know how to do — they're things I deliberatel
     ├── ous.tf                # non-Control-Tower OUs
     ├── scps.tf               # the 3 custom SCPs and their OU attachments
     ├── accounts.tf           # accounts provisioned directly through Organizations (e.g. Networking)
-    ├── networking.tf         # Networking hub VPC — private subnets only, no IGW (ADR-004)
+    ├── networking.tf         # Networking hub VPC — private + public-future subnets, no IGW attached yet (ADR-004)
     └── modules
-        └── vpc-baseline      # workload VPC module (public + private subnets, IGW, no NAT Gateway yet)
+        ├── vpc-baseline      # workload VPC module (3 AZs, Public/App/Data tiers, IGW, no NAT Gateway yet)
+        └── vpc-sandbox       # Sandbox VPC module (2 AZs, smaller /23 footprint)
 ```
 
 ## Status & Progress
@@ -237,11 +240,13 @@ None of these are things I don't know how to do — they're things I deliberatel
 - [x] ADR-004-Networking-Strategy Documented — VPC Peering hub-and-spoke via a `Networking` account, no exception to the deny-Transit-Gateway SCP even for that account
 - [x] **Terraform: provision the `Networking` account** ([`terraform/accounts.tf`](terraform/accounts.tf)) — created directly through Organizations, not Account Factory, so no Control Tower baseline cost until/unless it's separately enrolled
 - [x] Broaden the deny-Transit-Gateway SCP to every OU except Security (Infrastructure, Sandbox, Workloads, Policy Staging) — no exception for the `Networking` account, per ADR-004
-- [x] Decide the CIDR allocation plan (ADR-004) — one non-overlapping `/20` per account (Networking `10.0.0.0/20`, Dev `10.1.0.0/20`, Staging `10.2.0.0/20`, Prod `10.3.0.0/20`, Sandbox `10.4.0.0/20`)
-- [x] **Terraform: reusable VPC baseline module for workload accounts** ([`terraform/modules/vpc-baseline`](terraform/modules/vpc-baseline)) — 2 AZs, public + private `/24` subnets, one IGW, no NAT Gateway yet (private subnets have no outbound route). For Dev/Staging/Prod/Sandbox once those accounts exist — not used for `Networking` itself, see below
+- [x] Decide the CIDR allocation plan (ADR-004) — originally one non-overlapping `/20` per account; revised 2026-09-07 into a hierarchical scheme with per-environment growth pools — full table in [`docs/ip-address-plan.md`](docs/ip-address-plan.md)
+- [x] **Terraform: reusable VPC modules for future accounts** — [`terraform/modules/vpc-baseline`](terraform/modules/vpc-baseline) (3 AZs, Public/App/Data tiers, one IGW, no NAT Gateway yet) for Dev/Staging/Prod, and [`terraform/modules/vpc-sandbox`](terraform/modules/vpc-sandbox) (2 AZs, smaller `/23` footprint) for Sandbox. Neither instantiated yet — those accounts don't exist. Not used for `Networking` itself, see below
 - [x] **Terraform: cross-account provider alias** — `networking` alias in [`terraform/main.tf`](terraform/main.tf) assumes `OrganizationAccountAccessRole` in the `Networking` account, so one shared backend/state can still create resources there instead of a separate backend per account
-- [x] **Terraform: apply the `Networking` account's hub VPC** ([`terraform/networking.tf`](terraform/networking.tf)) — private-subnets-only, no IGW/public subnets (this account isn't a workload account, so it deliberately doesn't use `vpc-baseline` — see ADR-004). Applied 2026-09-04: `aws_vpc.networking_hub` (`vpc-0c903fd7b3e108d8e`), 2 private subnets, 1 route table, 2 associations — clean apply, no errors
-- [ ] Assign Identity Center access to the `Networking` account — `platform-admins` → `AdministratorAccess`, done manually via console like the other accounts (see note above; not automatic just because the account exists)
+- [x] **Terraform: apply the `Networking` account's hub VPC** ([`terraform/networking.tf`](terraform/networking.tf)) — private + "public (future)" subnets, no IGW attached yet (this account isn't a workload account, so it deliberately doesn't use either VPC module — see ADR-004). Applied 2026-09-04 on the original `/20` (`vpc-0c903fd7b3e108d8e`); rebuilt 2026-09-07 on the revised `/21` (`vpc-01790eeee360b1fc5`); rebuilt again 2026-09-07 in a brand-new Account-Factory-provisioned account (`vpc-021f251e55eebe1cf`) — no peering existed yet at any point, so each destroy+recreate broke nothing live
+- [x] **`Networking` account recreated as Control Tower-managed (2026-09-07)** — closed the original Terraform-created account (`204957733187`, no CT baseline) and reprovisioned it via Account Factory (`623609441070`), so it's born with the full baseline (CloudTrail, Config, `AWSControlTowerExecution`) instead of retrofitting enrollment later and inheriting an audit gap. See ADR-004's "Control Tower Enrollment" section for the reasoning and the one-time setup this required (registering the Infrastructure OU with Control Tower, and associating the Account Factory Service Catalog portfolio with the admin SSO role)
+- [x] Rename the `Networking` account — Account Factory had named it `NetworkingAccount`; renamed to `Networking` via that account's Billing → Account settings (Organizations doesn't support renaming an account directly)
+- [x] Assign Identity Center access to the `Networking` account — `platform-admins` → `AdministratorAccess`, done manually via console like the other accounts (see note above; not automatic just because the account exists)
 - [ ] Invite the existing Route 53 (DNS) account into the org, under Infrastructure OU — the hosted zone itself doesn't move, only the account joins
 - [ ] Create the `Shared Services` account under Infrastructure OU (planned in ADR-001, still empty)
 - [ ] Create Dev/Staging/Prod accounts via Account Factory, then instantiate `vpc-baseline` for each via their own `AWSControlTowerExecution`-based provider alias
