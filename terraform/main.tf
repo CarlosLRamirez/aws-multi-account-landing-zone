@@ -41,18 +41,20 @@ provider "aws" {
 # account's own state, rather than a separate Terraform root/backend per
 # account — one apply can reach every account this project manages).
 #
-# Networking was created via `aws_organizations_account` (accounts.tf), not
-# Account Factory, so it only has the default `OrganizationAccountAccessRole`
-# that Organizations grants the management account on every member account it
-# creates — not Control Tower's `AWSControlTowerExecution` role. Accounts
-# created later via Account Factory (Dev/Staging/Prod) will need their own
-# alias using that CT role instead.
+# Networking was originally created via `aws_organizations_account`
+# (2026-09-03, no CT baseline). Closed and recreated 2026-09-07 through
+# Account Factory instead (ADR-004's "Control Tower Enrollment" section), so
+# this alias now assumes Control Tower's `AWSControlTowerExecution` role,
+# not the plain `OrganizationAccountAccessRole` a Terraform-created account
+# would carry. Accounts created via Account Factory always need this role
+# instead; only an account deliberately created outside Account Factory
+# (the exception — see accounts.tf) would use `OrganizationAccountAccessRole`.
 provider "aws" {
   alias  = "networking"
   region = "us-east-1"
 
   assume_role {
-    role_arn     = "arn:aws:iam::${aws_organizations_account.networking.id}:role/OrganizationAccountAccessRole"
+    role_arn     = "arn:aws:iam::${var.networking_account_id}:role/AWSControlTowerExecution"
     session_name = "terraform-mgmt-networking"
   }
 
