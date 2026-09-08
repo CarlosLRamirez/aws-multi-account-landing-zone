@@ -52,7 +52,8 @@ provider "aws" {
   region = "us-east-1"
 
   assume_role {
-    role_arn = "arn:aws:iam::${aws_organizations_account.networking.id}:role/OrganizationAccountAccessRole"
+    role_arn     = "arn:aws:iam::${aws_organizations_account.networking.id}:role/OrganizationAccountAccessRole"
+    session_name = "terraform-mgmt-networking"
   }
 
   profile = "mgmt-admin"

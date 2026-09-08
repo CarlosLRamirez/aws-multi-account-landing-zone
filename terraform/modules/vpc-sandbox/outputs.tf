@@ -10,12 +10,8 @@ output "public_subnet_ids" {
   value = aws_subnet.public[*].id
 }
 
-output "app_subnet_ids" {
-  value = aws_subnet.app[*].id
-}
-
-output "data_subnet_ids" {
-  value = aws_subnet.data[*].id
+output "private_subnet_ids" {
+  value = concat(aws_subnet.private_a[*].id, aws_subnet.private_b[*].id)
 }
 
 output "internet_gateway_id" {

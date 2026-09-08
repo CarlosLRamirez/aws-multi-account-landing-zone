@@ -1,20 +1,20 @@
-# Standard per-account VPC baseline (ADR-004): one VPC, 3-tier subnet layout
-# (Public/App/Data) replicated across `az_count` AZs, one Internet Gateway,
-# and a route table per tier group.
+# Smaller VPC footprint for Sandbox accounts (ADR-004): one VPC, one public
+# and two private /26 subnets per AZ. Sized down from vpc-baseline (workload
+# accounts get /20s; Sandbox gets a /23) since sandbox workloads don't need
+# production-grade capacity. Kept as a separate module rather than a smaller
+# instance of vpc-baseline: the tier shape differs (two unnamed private
+# tiers here vs. named App/Data there) and so does the AZ count (2 vs 3) --
+# forcing one module to cover both would need conditional logic that isn't
+# worth it at this scale.
 #
-# Per-AZ CIDR layout (default /20 -> 4x /24 slots per AZ):
-#   offset 0: Public (Web)
-#   offset 1: Private (App)
-#   offset 2: Private (Data)
-#   offset 3: Reserved / TBD -- NOT provisioned as a subnet, just reserved
-#             address space until a use is decided
-# After all AZs (12 of 16 slots used at az_count=3), the remaining slots are
-# reserved for future /23 expansion -- also not provisioned.
+# Per-AZ CIDR layout (default /23 -> 8x /26 slots):
+#   offset 0: Public
+#   offset 1: Private
+#   offset 2: Private
+# After both AZs (6 of 8 slots used), the remaining 2 /26s are reserved --
+# not provisioned as subnets.
 #
-# Deliberately no NAT Gateway. The private route table carries only the
-# implicit local route -- no outbound path to the internet yet. See
-# ADR-004's "Networking Considerations" section for the NAT Instance vs
-# NAT Gateway decision to make when outbound access is actually needed.
+# Deliberately no NAT Gateway, same reasoning as vpc-baseline.
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -22,7 +22,7 @@ data "aws_availability_zones" "available" {
 
 locals {
   azs          = slice(data.aws_availability_zones.available.names, 0, var.az_count)
-  slots_per_az = 4
+  slots_per_az = 3
 }
 
 resource "aws_vpc" "this" {
@@ -43,7 +43,6 @@ resource "aws_internet_gateway" "this" {
   })
 }
 
-# Public (Web) tier: slot offset 0 within each AZ's 4-slot group.
 resource "aws_subnet" "public" {
   count                   = var.az_count
   vpc_id                  = aws_vpc.this.id
@@ -57,35 +56,32 @@ resource "aws_subnet" "public" {
   })
 }
 
-# Private (App) tier: slot offset 1 within each AZ's 4-slot group.
-resource "aws_subnet" "app" {
+resource "aws_subnet" "private_a" {
   count             = var.az_count
   vpc_id            = aws_vpc.this.id
   cidr_block        = cidrsubnet(var.vpc_cidr, var.subnet_newbits, count.index * local.slots_per_az + 1)
   availability_zone = local.azs[count.index]
 
   tags = merge(var.tags, {
-    Name = "${var.name}-app-${local.azs[count.index]}"
-    Tier = "app"
+    Name = "${var.name}-private-1-${local.azs[count.index]}"
+    Tier = "private"
   })
 }
 
-# Private (Data) tier: slot offset 2 within each AZ's 4-slot group.
-resource "aws_subnet" "data" {
+resource "aws_subnet" "private_b" {
   count             = var.az_count
   vpc_id            = aws_vpc.this.id
   cidr_block        = cidrsubnet(var.vpc_cidr, var.subnet_newbits, count.index * local.slots_per_az + 2)
   availability_zone = local.azs[count.index]
 
   tags = merge(var.tags, {
-    Name = "${var.name}-data-${local.azs[count.index]}"
-    Tier = "data"
+    Name = "${var.name}-private-2-${local.azs[count.index]}"
+    Tier = "private"
   })
 }
 
-# Slot offset 3 within each AZ's group, and every slot beyond
-# az_count * slots_per_az, is reserved address space (TBD use / future /23
-# expansion) -- deliberately not provisioned as an aws_subnet.
+# Slot offset beyond az_count * slots_per_az (2 slots at az_count=2) is
+# reserved address space -- deliberately not provisioned as an aws_subnet.
 
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.this.id
@@ -106,9 +102,6 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# Shared by App and Data: both have identical routing today (local route
-# only, no NAT). Split into separate route tables later if their outbound
-# paths ever need to diverge.
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.this.id
 
@@ -117,14 +110,14 @@ resource "aws_route_table" "private" {
   })
 }
 
-resource "aws_route_table_association" "app" {
+resource "aws_route_table_association" "private_a" {
   count          = var.az_count
-  subnet_id      = aws_subnet.app[count.index].id
+  subnet_id      = aws_subnet.private_a[count.index].id
   route_table_id = aws_route_table.private.id
 }
 
-resource "aws_route_table_association" "data" {
+resource "aws_route_table_association" "private_b" {
   count          = var.az_count
-  subnet_id      = aws_subnet.data[count.index].id
+  subnet_id      = aws_subnet.private_b[count.index].id
   route_table_id = aws_route_table.private.id
 }
