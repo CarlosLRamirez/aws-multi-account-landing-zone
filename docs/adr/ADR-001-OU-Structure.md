@@ -6,15 +6,16 @@ Accepted
 
 ## Context
 
-This Landing Zone serves several purposes: first, as an environment for learning, experimentation, and project work for my professional portfolio; and second, to provide a solid foundation to deploy personal projects and learning labs, as well as workloads that resemble enterprise environments.
+This landing zone serves several purposes: first, to serve as a learning and experimentation environment, as well as part of my portfolio of cloud architecture projects; second, it aims to provide a solid foundation for implementing personal projects and learning labs, seeking to replicate the structure and decisions of real-world enterprise environments.
 
 The architecture enables deploying workloads through multi-stage pipelines (`dev`, `staging`, `prod`) with true isolation between environments following industry best practices. The chosen hierarchy provides the flexibility needed to host simple, sandboxed projects while maintaining the strict structure and governance required by production-grade environments.
 
-## Decision
+## Decisions
 
-Use an OU structure organized by environment (not by project), with an explicit separation between **Sandbox** (labs) and **Operational** Workloads (`Dev`/`Staging`/`Prod`):
-
-A dedicated **Policy Staging OU** which serves as a quarantine zone for testing new or modified SCPs before applying them to the actual OUs (Foundational, Infrastructure, Sandbox and Workloads). It allows you to verify that a guardrail behaves as expected, without the risk of disrupting production or foundational accounts if the policy contains an error.
+- Use an OU structure organized by environment (not by project), with an explicit separation between **Sandbox** (labs) and **Operational** Workloads (`Dev`/`Staging`/`Prod`)
+- A dedicated **Policy Staging OU** which serves as a quarantine zone for testing new or modified SCPs before applying them to the actual OUs (Foundational, Infrastructure, Sandbox and Workloads). It allows you to verify that a guardrail behaves as expected, without the risk of disrupting production or foundational accounts if the policy contains an error.
+- A Security OU for Control Tower's mandatory accounts that support governance across the rest of the organization, and an Infrastructure OU for networking and other shared services used across the organization (e.g. DNS).
+- An organizational unit (OU) called “Closed Accounts” to categorize accounts that are in the process of being deleted, either because they were created by mistake or because it was decided to delete them after further consideration
 
 ```text
 Root
@@ -29,17 +30,18 @@ Root
 │   ├── Dev OU
 │   ├── Staging OU
 │   └── Prod OU
-└── Policy Staging OU
+├── Policy Staging OU
+└── ClosedAccounts OU
 ```
 
 ## Consequences
 
-| Category | Impact                                   | Details                                                                                                                                                                                                                 |
-| -------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Positive | **Environment-Wide Guardrail**           | SCPs applied at the OU level automatically govern all current and future accounts within an environment (e.g., `Prod OU` policies automatically apply to all production accounts without manual replication).           |
-| Positive | **Strict Structural Isolation**          | Allows true multi-account boundary isolation between `Dev` and `Prod` environments, instead of depending on naming conventions or resource tagging.                                                                     |
+| Category | Impact                                   | Details                                                                                                                                                                                                                                      |
+| -------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Positive | **Environment-Wide Guardrail**           | SCPs applied at the OU level automatically govern all current and future accounts within an environment (e.g., `Prod OU` policies automatically apply to all production accounts without manual replication).                                |
+| Positive | **Strict Structural Isolation**          | Allows true multi-account boundary isolation between `Dev` and `Prod` environments, instead of depending on naming conventions or resource tagging.                                                                                          |
 | Negative | **Operational Overhead & Baseline Cost** | Provisioning a new project across a 2-3 account environment (Dev/Staging/Prod) requires 2-3 separate AWS accounts. Each account incurs minor baseline charges for services like AWS Config and CloudTrail (a few dollars per account/month). |
-| Negative | **Identity & Access Management**         | Cross-account access management is by nature more complex than a single-account architecture, requiring a well-structured IAM Identity Center (AWS SSO) strategy — something AWS Control Tower actually helps set up.   |
+| Negative | **Identity & Access Management**         | Cross-account access management is by nature more complex than a single-account architecture, requiring a well-structured IAM Identity Center (AWS SSO) strategy — something AWS Control Tower actually helps set up.                        |
 
 ## Alternatives Considered
 

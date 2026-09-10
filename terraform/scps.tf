@@ -41,8 +41,8 @@ resource "aws_organizations_policy" "require_mandatory_tags" {
 #
 # Mandatory tags attaches once at Workloads: SCPs inherit down the OU tree,
 # so Dev/Staging/Prod get it without a separate attachment each. Restrict EC2
-# types attaches directly to Dev and Staging only — Prod is deliberately
-# excluded (ADR-003), and Sandbox is out of scope for now.
+# types attaches directly to Dev, Staging, and Sandbox — Prod is deliberately
+# excluded (ADR-003).
 #
 # Deny TGW is the one exception: it attaches to every OU except Security
 # (Infrastructure, Sandbox, Workloads, Policy Staging) with no carve-out for
@@ -83,4 +83,9 @@ resource "aws_organizations_policy_attachment" "restrict_ec2_types_dev" {
 resource "aws_organizations_policy_attachment" "restrict_ec2_types_staging" {
   policy_id = aws_organizations_policy.restrict_ec2_types.id
   target_id = aws_organizations_organizational_unit.staging.id
+}
+
+resource "aws_organizations_policy_attachment" "restrict_ec2_types_sandbox" {
+  policy_id = aws_organizations_policy.restrict_ec2_types.id
+  target_id = aws_organizations_organizational_unit.sandbox.id
 }

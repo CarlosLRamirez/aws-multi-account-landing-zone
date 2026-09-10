@@ -20,9 +20,9 @@ No real workload VPCs exist yet — Dev, Staging, and Prod are OUs waiting on ac
 
 Per ADR-001, an Infrastructure OU is planned to host `Networking` and `Shared Services` accounts, for cross-cutting services and inter-account connectivity, as well as hybrid-type traffic (VPNs, etc.).
 
-Per ADR-003, a custom SCP will exist to prevent Transit Gateway creation across the organization — with no exception, not even for the `Networking` account itself. If that decision ever changes, the fix is to remove or scope down the SCP deliberately, not to have carried a silent exception since day one for the one account that looks like the "natural" place to build a Transit Gateway.
+Per ADR-003, a custom SCP will exist to prevent Transit Gateway creation across the organization — with no exception, not even for the `Networking` account itself. If that decision ever changes, the fix is to remove or scope down the SCP deliberately.
 
-## Decision
+## Decision 
 
 Use **VPC Peering**, not Transit Gateway, for inter-account connectivity, arranged in a **hub-and-spoke topology centered on the `Networking` account** (Infrastructure OU):
 
@@ -32,7 +32,9 @@ Use **VPC Peering**, not Transit Gateway, for inter-account connectivity, arrang
 
 At the current scale — a handful of accounts, no meaningful east-west bandwidth requirement — VPC Peering's simplicity and $0 fixed cost win over Transit Gateway's centralized route management and per-attachment/per-GB charges.
 
-**CIDR allocation — revised 2026-09-07.** The original plan (one flat `/20` per account) was replaced with a hierarchical scheme that pre-reserves address space by function and environment, so future accounts within an environment don't require renumbering anything already deployed. The full allocation table, per-VPC subnet layouts, and change history now live in [`docs/ip-address-plan.md`](../ip-address-plan.md) — that document tracks current allocation state and gets updated whenever a new slot is assigned; this ADR records the design rationale, which doesn't change just because a slot got used.
+### CIDR allocation
+
+A hierarchical scheme that pre-reserves address space by function and environment, so future accounts within an environment don't require renumbering anything already deployed. The full allocation table, per-VPC subnet layouts, and change history now live in [`docs/ip-address-plan.md`](../ip-address-plan.md) — that document tracks current allocation state and gets updated whenever a new slot is assigned; this ADR records the design rationale, which doesn't change just because a slot got used.
 
 In summary: `Networking` hub and `Shared Services` each get a `/21`; 4 more `/21`s are reserved for future cross-cutting/security tooling; Dev, Staging, Prod, and Sandbox each get a pool of 8 slots (`/20` for workload environments, `/23` for Sandbox) with only the first slot in use. **The 8-slots-per-environment pools are address-space margin, not a commitment to multiple accounts per environment** — as of this revision, the plan is still one account each for Dev/Staging/Prod/Sandbox; the extra 7 slots per pool exist so that *if* a future need arises (e.g. splitting Dev by team), it's a new VPC in already-reserved space, not a renumbering exercise across the whole org.
 
@@ -95,6 +97,8 @@ Open questions and design notes for when the Landing Zone needs actual egress/in
 
 - **Centralized egress is viable with VPC Peering.** A single NAT Gateway (or NAT instance) in the `Networking` hub can serve all workload VPCs: `private subnet → peering connection → Networking hub → NAT → IGW → Internet`. This matches the hub-and-spoke topology already chosen and gives one choke point for future egress inspection/logging. The hub's `/21` layout (see Decision section above) already reserves one "Public (Future)" `/24` per AZ for exactly this — when the day comes, it's a matter of adding an Internet Gateway and a NAT resource in those subnets, not a redesign.
 - **Centralized ingress is not practical with VPC Peering.** An Internet Gateway is bound to a single VPC — it can't be "shared" across peered VPCs the way a NAT path can. If a workload account (e.g. Prod) needs to expose something to the internet (an ALB, a public endpoint), that resource needs its own IGW/public subnet in its own VPC. Centralizing inbound traffic through the hub would require Transit Gateway + Gateway Load Balancer, VPC Lattice, or PrivateLink — none of which fit cleanly on top of plain VPC Peering. Conclusion: **each workload account keeps its own IGW for public-facing resources; only the outbound path centralizes.**
+
+**Correction (2026-09-10): "centralized egress is viable with VPC Peering" above is only true for a NAT *instance*, not a NAT *Gateway*.** AWS's VPC Peering documentation lists "edge to edge routing through a gateway" as an explicitly unsupported configuration: a peered VPC cannot route traffic onward through another VPC's Internet Gateway, NAT Gateway, VPN connection, or Direct Connect connection. A managed NAT Gateway in the `Networking` hub therefore **cannot** serve spoke VPCs' outbound traffic at all — it's not a matter of cost or complexity, it simply doesn't route. A self-managed NAT instance (a plain EC2 host doing IP forwarding, not one of AWS's "gateway" constructs) is unaffected by this restriction and works fine across peering, which is what the "Working conclusion" below already recommends — that recommendation now rests on a hard technical constraint, not only the cost comparison it was originally framed around. This doesn't change the per-account IGW conclusion in the bullet above; it only narrows which mechanism can implement the centralized-egress side of it.
 
 **NAT Gateway vs. NAT Instance — cost trade-off for a personal-lab context.**
 

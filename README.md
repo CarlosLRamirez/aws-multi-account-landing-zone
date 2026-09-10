@@ -12,7 +12,7 @@ This Landing Zone consists of:
 
 - An AWS Organization under AWS Control Tower 4.0 management
 - The `LogArchive` and `Aggregator` standard CT accounts under a `Security OU` (both Control Tower-managed)
-- A `Networking` account under an `Infrastructure OU`, managed by Terraform
+- A `Networking` account under an `Infrastructure OU`, provisioned via Control Tower Account Factory (full CT baseline — CloudTrail, Config), with its hub VPC built via Terraform
 - Additional empty OUs to allocate future accounts: Sandbox, Workloads (with Dev/Staging/Prod), and Policy Staging
 - 13 preventive controls, deployed by default by Control Tower, governing the accounts under its management
 - **3 additional custom SCPs**, managed and attached to specific OUs by Terraform:
@@ -34,15 +34,15 @@ Root
 │   ├── LogArchive            # Control Tower Managed
 │   └── Aggregator account    # Control Tower Managed
 ├── Infrastructure OU
-│   ├── Shared Services      # Planned
+│   ├── Shared Services       #future
 │   └── Networking
 ├── Sandbox OU                # Labs and experimentation
 ├── Workloads OU              # Operational Environments
 │   ├── Dev OU
 │   ├── Staging OU
 │   └── Prod OU
-└── Policy Staging OU
-    └── SCP-test              # Closed — SCP testing purpose
+├── Policy Staging OU
+└── ClosedAccounts OU
 ```
 
 ## Key Design Decisions
@@ -105,11 +105,11 @@ High-level implementation process based on the decisions made initially
 
 ### 5. Networking foundation (ADR-004)
 
-- Created the `Networking` account under Infrastructure OU directly via Terraform (`aws_organizations_account`, [`terraform/accounts.tf`](terraform/accounts.tf)) instead of Account Factory, so it carries no Control Tower baseline cost until deliberately enrolled later.
-- Added `aws.networking` provider alias in `main.tf`, assuming `OrganizationAccountAccessRole` from the management account to create resources directly in the Networking account within the same Terraform state.
+- Created the `Networking` account under Infrastructure OU directly via Terraform (`aws_organizations_account`) instead of Account Factory, to avoid Control Tower baseline cost while the account only held a VPC — the exception path documented in ADR-004, not the default.
 - Decided the CIDR allocation plan: a hierarchical scheme reserving growth space per environment, not a flat `/20` per account — full table in [`docs/ip-address-plan.md`](docs/ip-address-plan.md).
-- Built the hub VPC directly in [`terraform/networking.tf`](terraform/networking.tf) — not the `vpc-baseline` module, since this account isn't a workload account: private + "public (future)" subnets across 3 AZs, no Internet Gateway attached yet. `terraform apply` clean.
+- Built the hub VPC in [`terraform/networking.tf`](terraform/networking.tf) — not the `vpc-baseline` module, since this account isn't a workload account: private + "public (future)" subnets across 3 AZs, no Internet Gateway attached yet.
 - Wrote two reusable modules as the standard templates for future accounts, neither instantiated yet since those accounts don't exist: [`terraform/modules/vpc-baseline`](terraform/modules/vpc-baseline) (3 AZs, Public/App/Data tiers, one IGW, no NAT Gateway yet) for Dev/Staging/Prod, and [`terraform/modules/vpc-sandbox`](terraform/modules/vpc-sandbox) (2 AZs, smaller `/23` footprint) for Sandbox.
+- **Revisited the account's provisioning path** (see ADR-004's "Control Tower Enrollment" section): decided the cost saved by skipping the Control Tower baseline wasn't worth the governance gap it left — no CloudTrail/Config coverage, none of the 13 mandatory preventive SCPs. Since the account still held only a VPC with no peering connections and no workloads, closed it and reprovisioned it via Account Factory instead, so it's Control Tower-managed from birth rather than retrofitted later. This required registering the `Infrastructure` OU with Control Tower first (Account Factory only targets registered OUs) and separately associating the Account Factory Service Catalog portfolio with the admin SSO role — Service Catalog portfolio access is a distinct layer from IAM policy, so `AdministratorAccess` alone wasn't enough to launch it. The hub VPC was rebuilt in the new account, same design, new account ID.
 - Still open: the actual VPC Peering connections between the hub and each future workload VPC.
 
 ## Rebuilding This From Scratch
@@ -130,7 +130,7 @@ The steps above cover bootstrapping this Landing Zone once. This is the recurrin
 
 1. **Create the account.** Two paths, per ADR-005's scope split:
    - Via **Account Factory** (Control Tower console) if it should get the standard CT baseline (CloudTrail/Config, eligible for Identity Center assignment right away) — the normal path for a real project account.
-   - Via Terraform (`aws_organizations_account`, the same pattern as `terraform/accounts.tf`) only if it deliberately shouldn't carry that baseline cost yet — the exception, not the default; the reason `Networking` used it.
+   - Via Terraform (`aws_organizations_account`, the pattern `terraform/accounts.tf` is kept ready for) only if it deliberately shouldn't carry that baseline cost yet — the exception, not the default. `Networking` took this path originally, then moved to Account Factory once the governance gap outweighed the cost saved (see ADR-004's "Control Tower Enrollment" section) — a preview of the trade-off this path always carries.
 
    Place it under the OU matching its environment tier (Dev/Staging/Prod), per ADR-001's environment-first structure. SCPs attached at the OU level apply automatically — no per-account SCP work needed.
 
