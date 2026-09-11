@@ -1,6 +1,6 @@
 # IP Address Plan
 
-This is the living reference for CIDR allocation across the organization. The design rationale (why a hierarchical scheme replaced a flat one, why three VPC layouts instead of one) lives in [ADR-004](adr/ADR-004-Networking-Strategy.md) — this document only tracks what's allocated, what's reserved, and what's actually deployed. Update this file whenever a new slot is assigned; ADR-004 itself doesn't need to change for that.
+This is the base CIDR allocation for the landing zone as designed — what was allocated, what was reserved, and why. It's a snapshot, not a living document: this repository documents the landing zone build up to a fixed point, and anything built afterward (real workloads, further allocation) belongs in that project's own repository. The design rationale (why a hierarchical scheme replaced a flat one, why three VPC layouts instead of one) lives in [ADR-004](adr/ADR-004-Networking-Strategy.md).
 
 Last updated: 2026-09-07.
 

@@ -54,6 +54,21 @@ This is treated as a **deliberate, temporary decision**, not the target end-stat
 
 Kept intentionally flat for now: a single root Terraform configuration under `terraform/`. No environment-per-directory or module split until there's an actual second consumer of a module — splitting now would be designing for a future that doesn't exist yet.
 
+### Cross-account resource management: provider aliases
+
+One Terraform state manages resources across multiple AWS accounts (management, `Networking`, and future workload accounts) — no per-account backend. Reaching into a member account uses a **per-account AWS provider alias** that assumes a role in that account:
+
+- Accounts created directly via `aws_organizations_account` (not through Account Factory) only get the default `OrganizationAccountAccessRole` that AWS Organizations grants automatically.
+- Accounts provisioned via Account Factory (the current `Networking` account, and later Dev/Staging/Prod) get Control Tower's `AWSControlTowerExecution` role instead, so their provider alias assumes that role.
+
+The `networking` provider alias in `terraform/main.tf` is the first instance of this pattern — see ADR-004 for how it's used to manage the `Networking` account's VPC.
+
+### Boundary with future project repos
+
+This repo's Terraform stops at the landing zone: accounts, guardrails, and each workload account's baseline VPC (ADR-004). A future application project (e.g. a 3-tier web app deployed into the Dev account) gets **its own repository and its own Terraform state**, not a folder added here — see the "one state per lifecycle" reasoning above; an application changes far more often than the landing zone it runs on.
+
+That project's Terraform should **not** authenticate using `AWSControlTowerExecution`. That role is effectively full admin, meant for Control Tower's own account governance, not for routine `terraform apply` runs from an application pipeline. Instead, create a dedicated, scoped IAM role in the target account for that project — granted only the permissions it actually needs — and have its provider assume that role instead. This keeps least-privilege intact as more projects land in accounts this landing zone provisions.
+
 ## Consequences
 
 **Positive:**

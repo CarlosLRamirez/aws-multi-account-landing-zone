@@ -22,7 +22,7 @@ Per ADR-001, an Infrastructure OU is planned to host `Networking` and `Shared Se
 
 Per ADR-003, a custom SCP will exist to prevent Transit Gateway creation across the organization — with no exception, not even for the `Networking` account itself. If that decision ever changes, the fix is to remove or scope down the SCP deliberately.
 
-## Decision 
+## Decision
 
 Use **VPC Peering**, not Transit Gateway, for inter-account connectivity, arranged in a **hub-and-spoke topology centered on the `Networking` account** (Infrastructure OU):
 
@@ -34,17 +34,34 @@ At the current scale — a handful of accounts, no meaningful east-west bandwidt
 
 ### CIDR allocation
 
-A hierarchical scheme that pre-reserves address space by function and environment, so future accounts within an environment don't require renumbering anything already deployed. The full allocation table, per-VPC subnet layouts, and change history now live in [`docs/ip-address-plan.md`](../ip-address-plan.md) — that document tracks current allocation state and gets updated whenever a new slot is assigned; this ADR records the design rationale, which doesn't change just because a slot got used.
+An IP addressing scheme was defined. It reserves network segments for shared and security accounts, sandbox accounts, and workload accounts by environment. Continuous segments are used for each environment. This makes grouping and summarization easy. This design provides future network segments. It does not mean that the accounts or VPCs exist from the beginning. Also, it assumes that each AWS Account will keep a single VPC.
 
-In summary: `Networking` hub and `Shared Services` each get a `/21`; 4 more `/21`s are reserved for future cross-cutting/security tooling; Dev, Staging, Prod, and Sandbox each get a pool of 8 slots (`/20` for workload environments, `/23` for Sandbox) with only the first slot in use. **The 8-slots-per-environment pools are address-space margin, not a commitment to multiple accounts per environment** — as of this revision, the plan is still one account each for Dev/Staging/Prod/Sandbox; the extra 7 slots per pool exist so that *if* a future need arises (e.g. splitting Dev by team), it's a new VPC in already-reserved space, not a renumbering exercise across the whole org.
+Complete CIDR table and subnet layouts are detailed in [`docs/ip-address-plan.md`](../ip-address-plan.md)
 
-**Three different internal layouts, not one — `Networking`, workload accounts, and Sandbox all have distinct shapes** (full subnet tables in `docs/ip-address-plan.md`):
+In summary: `Networking` hub and `Shared Services` each get a `/21`; 4 more `/21`s are reserved for future cross-cutting/security tooling; Dev, Staging, Prod, and Sandbox each get a pool of 8 slots (`/20` for workload environments, `/23` for Sandbox).
 
-- **Workload VPCs** (Dev, Staging, Prod) — 3-tier layout across 3 AZs: Public (Web), Private (App), Private (Data), plus one reserved/TBD slot per AZ and 4 more reserved for future `/23` expansion. Reserved slots are **not provisioned as `aws_subnet` resources** — they're address space held for later, not idle infrastructure. One Internet Gateway, no NAT Gateway yet (same reasoning as before — see Consequences). Implemented as the reusable Terraform module `terraform/modules/vpc-baseline`, instantiated once per workload account.
-- **Sandbox VPCs** — smaller footprint, since sandbox workloads don't need production-grade capacity: 2 AZs, one Public + two Private `/26` subnets per AZ. A separate module, `terraform/modules/vpc-sandbox` — not a smaller instance of `vpc-baseline`, since the tier count and AZ count differ enough that forcing one module to cover both would need conditional logic that isn't worth the complexity at this scale.
-- **The `Networking` hub VPC** — one Private + one Public (Future) subnet per AZ across 3 AZs. "Public (Future)" subnets are provisioned now but carry **no Internet Gateway and no route to one yet** — they reserve the address space and AZ placement for the day this account centralizes egress (NAT Instance/Gateway) per the "Networking Considerations" section below, without requiring a resize later. This account still runs no application workloads — the Private subnets remain the peering attachment points, and a future Virtual Private Gateway would land its propagated routes there too. Kept as plain resources in `terraform/networking.tf` rather than either workload module, since neither shape matches what this account is for.
+Three different internal layouts: `Networking`, workload accounts, and Sandbox accounts (full subnet tables in `docs/ip-address-plan.md`):
 
-**Cross-account Terraform.** Each account's VPC is created from the same Terraform state as everything else in this repo (ADR-005), via a per-account AWS provider alias that assumes a cross-account role rather than giving each account its own Terraform backend. `Networking` was created directly through `aws_organizations_account` (not Account Factory), so it only has the default `OrganizationAccountAccessRole` Organizations grants automatically — not Control Tower's `AWSControlTowerExecution`. Accounts created later via Account Factory (Dev, Staging, Prod) will need their own alias using that role instead once they exist. Keeping one shared backend, rather than a backend per account, was chosen for the same cost-discipline reason ADR-005 gives for not splitting state in the first place: an extra S3 bucket and lockfile per account buys isolation this project doesn't need yet.
+#### Workload VPC
+- The Terraform module `vpc-baseline` is included with the VPC template and the planned subnet mapping — implemented as a reusable module, instantiated once per workload account. CIDR values must be specified manually, using [`docs/ip-address-plan.md`](../ip-address-plan.md) as the reference; this is not automatic.
+- Three AZs are considered. Each AZ has four `/24` subnets. The first three match a three-layer architecture: Web (Public), App (Private), and Data (Private).
+- A fourth `/24` is reserved in the IP plan for a possible fourth layer if needed later, but it's not included as an `aws_subnet` resource in the `vpc-baseline` module.
+- Four more `/24` blocks are reserved (equivalent to two `/23` blocks), for cases where bigger subnets are needed for a specific application or architecture — also not included in the Terraform module.
+- This fills the entire `/20` reserved for each Workload VPC.
+- None of these reserved spaces are deployed yet — they only hold address space that applications might need later. It doesn't mean every subnet will eventually be created; it only covers possible future scenarios.
+- Each VPC has its own Internet Gateway for the public part. A NAT Gateway is not planned for now — a deliberate decision for cost reasons, detailed in the Consequences section below.
+
+#### Sandbox VPC
+- Smaller footprint, since sandbox workloads don't need production-grade capacity: 2 AZs, one Public + two Private `/26` subnets per AZ.
+- A separate module, `terraform/modules/vpc-sandbox` available to faciliatate the deployemnet.
+
+#### Networking Hub VPC
+- One Private + one Public (Future) subnet per AZ across 3 AZs. "Public (Future)" subnets are provisioned now but carry **no Internet Gateway and no route to one yet** — they reserve the address space and AZ placement for the day this account centralizes egress (NAT Instance/Gateway) per the "Networking Considerations" section below, without requiring a resize later. 
+- This account still runs no application workloads — the Private subnets remain the peering attachment points, and a future Virtual Private Gateway would land its propagated routes there too. 
+- Kept as plain resources in `terraform/networking.tf` rather than either workload module.
+
+#### Cross-account Terraform
+The `Networking` account's VPC is managed via the `networking` provider alias — see ADR-005 for the general cross-account provider-alias pattern this follows. `Networking` was created via Account Factory, so its alias assumes Control Tower's `AWSControlTowerExecution` role. Future accounts provisioned the same way (Dev, Staging, Prod) will follow the same pattern once they exist.
 
 ## Consequences
 
@@ -59,30 +76,6 @@ In summary: `Networking` hub and `Shared Services` each get a `/21`; 4 more `/21
 - VPC Peering isn't transitive — every new spoke needs its own explicit peering connection to the hub, with route table updates on both sides. This stops being comfortable to manage by hand somewhere around 10 VPCs.
 - No AWS-native central route table the way Transit Gateway provides one; more Terraform code to maintain per-VPC routes as the number of spokes grows.
 
-**CIDR revision migration cost (2026-09-07).** A VPC's primary CIDR block can't be changed in place — moving the hub from `10.0.0.0/20` to `10.0.0.0/21` forces Terraform to destroy and recreate `aws_vpc.networking_hub` and everything attached to it (subnets, route tables, associations). This is low-risk today only because no peering connections exist yet and the account runs no workloads (per CLAUDE.md, "no peering connections yet" as of this revision) — the same CIDR change made after real peering/workloads existed would be a breaking change requiring a maintenance window. Applying this revision is a `terraform apply` the user runs deliberately, not something to automate.
-
-**Control Tower Enrollment.**
-
-The `Networking` account was created via Terraform (`aws_organizations_account` in `terraform/accounts.tf`) rather than Control Tower's Account Factory, and is not currently enrolled in Control Tower baseline (no CloudTrail, Config, or IAM role setup from CT). This was chosen for cost discipline — avoiding Control Tower baseline charges on an account that doesn't run workloads — but carries a governance trade-off:
-
-*Current state (as of 2026-09-07):*
-- ✅ Cost: $0 baseline overhead, no Control Tower charges
-- ❌ Auditability: CloudTrail logs don't flow to central aggregator account; Config compliance not recorded
-- ❌ Uniform controls: 13 mandatory preventive SCPs from Control Tower don't apply; relying on manual SCP #2 (Deny Transit Gateway) coverage instead
-- ❌ Operational drift detection: no built-in Control Tower drift checks; requires manual verification
-
-*Production reality check:*
-In a real enterprise environment, the best practice would be to enroll *all* accounts in Control Tower, including infrastructure/hub accounts, even if they don't run workloads. Governance and audit logging should be uniform across the organization; differentiation should come from targeted SCPs and permission sets, not from removing accounts from the baseline entirely. The exception to this rule — keeping platform/infrastructure accounts outside Control Tower — is rare and requires explicit organizational policy.
-
-*Can it be enrolled later?*
-Yes — Control Tower supports enrolling existing accounts retrospectively via `aws controltower enable-baseline --account-id 204957733187`. This creates the necessary IAM roles (`AWSControlTowerExecution`, CloudTrail log archive access), applies the 13 mandatory preventive SCPs, and starts recording CloudTrail/Config prospectively. **However, this creates audit gaps.** Any resources created before enrollment (in this case, the VPC and subnets created 2026-09-03) won't have a Config compliance history, and CloudTrail logs from before enrollment won't flow to the central aggregator account. The operational result is functionally identical to day-one enrollment, but the audit trail has a hole from 2026-09-03 to the enrollment date.
-
-Best practice: **create all accounts via Account Factory from the start** — it auto-enrolls and avoids audit gaps. Enrolling after the fact is acceptable for POCs and demos but not for production accounts with compliance requirements.
-
-*Resolved 2026-09-07:* rather than retrofit enrollment onto the existing account (and inherit the audit gap described above), the account was closed and recreated from scratch via Account Factory — at this stage the account held only a VPC with no peering connections and no workloads, making a full rebuild cheaper than living with a permanent hole in the audit trail. New account: `623609441070`, born with the full Control Tower baseline (CloudTrail, Config, `AWSControlTowerExecution` role) from the moment it existed. This was only possible because it was still Month 1 — the same rebuild after real peering/workloads existed would need the retrospective-enrollment path above instead, audit gap and all.
-
-Two things this rebuild needed that hadn't been necessary before, both worth remembering for the next account: (1) the target OU has to be **registered** with Control Tower before Account Factory can provision into it — creating the OU in Organizations isn't enough (`Infrastructure` needed this registration; `Policy Staging` already had it from the `SCP-test` days), and Control Tower refuses to register an OU that contains suspended/closed accounts, which is why the old `Networking`, `Audit`, and `SCP-test` accounts got moved into a new `ClosedAccounts` OU first; (2) launching Account Factory itself requires the IAM Identity Center principal to be associated with the "AWS Control Tower Account Factory" Service Catalog portfolio — a separate access layer from IAM policy, so `AdministratorAccess` alone isn't enough. Both are one-time setup costs per OU/principal, not something every future account provisioning repeats.
-
 ## Alternatives Considered
 
 - **Transit Gateway hub-and-spoke.** Rejected for now: real per-attachment-hour and per-GB cost with no workloads yet to justify it, and already blocked org-wide by SCP #2. Revisit if account count grows enough that peering's management overhead exceeds Transit Gateway's cost.
@@ -91,16 +84,14 @@ Two things this rebuild needed that hadn't been necessary before, both worth rem
 
 ## Networking Considerations (Future Work)
 
-Open questions and design notes for when the Landing Zone needs actual egress/ingress to the internet — not yet implemented, captured here so the reasoning isn't lost before it's needed.
+Notes for when the Landing Zone needs real internet access. Not implemented yet, written down here so the reasoning is not lost.
 
-**Centralized egress (NAT) vs. centralized ingress (IGW) — these are not the same problem.**
+**Centralized egress (NAT) and centralized ingress (IGW) are two different problems.**
 
-- **Centralized egress is viable with VPC Peering.** A single NAT Gateway (or NAT instance) in the `Networking` hub can serve all workload VPCs: `private subnet → peering connection → Networking hub → NAT → IGW → Internet`. This matches the hub-and-spoke topology already chosen and gives one choke point for future egress inspection/logging. The hub's `/21` layout (see Decision section above) already reserves one "Public (Future)" `/24` per AZ for exactly this — when the day comes, it's a matter of adding an Internet Gateway and a NAT resource in those subnets, not a redesign.
-- **Centralized ingress is not practical with VPC Peering.** An Internet Gateway is bound to a single VPC — it can't be "shared" across peered VPCs the way a NAT path can. If a workload account (e.g. Prod) needs to expose something to the internet (an ALB, a public endpoint), that resource needs its own IGW/public subnet in its own VPC. Centralizing inbound traffic through the hub would require Transit Gateway + Gateway Load Balancer, VPC Lattice, or PrivateLink — none of which fit cleanly on top of plain VPC Peering. Conclusion: **each workload account keeps its own IGW for public-facing resources; only the outbound path centralizes.**
+- **Centralized egress works with VPC Peering, but only using a NAT instance, not a NAT Gateway.** AWS does not allow routing through a gateway of a peered VPC — this is called "edge to edge routing" and AWS lists it as not supported. A gateway here means an Internet Gateway, a NAT Gateway, a VPN connection, or a Direct Connect connection. So a managed NAT Gateway placed in the `Networking` hub cannot serve outbound traffic from the other VPCs through peering — it just does not route, no matter the configuration. A NAT instance (a normal EC2 instance doing NAT) is not a "gateway" in AWS's sense, so it does not hit this restriction and works fine across peering: `private subnet → peering connection → Networking hub → NAT instance → IGW → Internet`. If a managed NAT Gateway is needed later for this, VPC Peering is not enough — that would require moving to Transit Gateway. The hub's `/21` layout already reserves one "Public (Future)" `/24` per AZ for this, so adding it later only means new resources, not a redesign.
+- **Centralized ingress does not work with VPC Peering.** An Internet Gateway belongs to a single VPC and cannot be shared with peered VPCs. If a workload account (e.g. Prod) needs to expose something to the internet, like an ALB, that VPC needs its own IGW and public subnet. Centralizing ingress through the hub would need Transit Gateway with a Gateway Load Balancer, VPC Lattice, or PrivateLink — none of these work on top of plain VPC Peering. Conclusion: **each workload account keeps its own IGW for public-facing resources; only the outbound path can be centralized, and only with a NAT instance.**
 
-**Correction (2026-09-10): "centralized egress is viable with VPC Peering" above is only true for a NAT *instance*, not a NAT *Gateway*.** AWS's VPC Peering documentation lists "edge to edge routing through a gateway" as an explicitly unsupported configuration: a peered VPC cannot route traffic onward through another VPC's Internet Gateway, NAT Gateway, VPN connection, or Direct Connect connection. A managed NAT Gateway in the `Networking` hub therefore **cannot** serve spoke VPCs' outbound traffic at all — it's not a matter of cost or complexity, it simply doesn't route. A self-managed NAT instance (a plain EC2 host doing IP forwarding, not one of AWS's "gateway" constructs) is unaffected by this restriction and works fine across peering, which is what the "Working conclusion" below already recommends — that recommendation now rests on a hard technical constraint, not only the cost comparison it was originally framed around. This doesn't change the per-account IGW conclusion in the bullet above; it only narrows which mechanism can implement the centralized-egress side of it.
-
-**NAT Gateway vs. NAT Instance — cost trade-off for a personal-lab context.**
+**NAT Gateway vs. NAT Instance — cost trade-off for a personal-lab context.** This table is a general comparison. Under VPC Peering, only the NAT Instance column is actually usable for centralized egress — the NAT Gateway column would only apply if the topology moves to Transit Gateway later (see Alternatives Considered).
 
 | | NAT Gateway (managed) | NAT Instance (EC2) |
 | --- | --- | --- |
@@ -113,4 +104,4 @@ For this Landing Zone's actual traffic profile (personal lab, no production SLA)
 
 **Cheaper still: no NAT at all, until something actually needs outbound access.** Per the Decision section above, private subnets in workload VPCs currently have no outbound route at all — that's $0 and remains the default until a specific workload needs it. VPC Gateway Endpoints (S3, DynamoDB — free, no hourly charge) can also satisfy some outbound traffic without any NAT path at all, if the destination is one of the services they cover.
 
-**Working conclusion (not yet implemented):** when egress is needed, prefer a NAT Instance in the `Networking` hub over NAT Gateway, sized minimally (`t4g.nano` or smaller), with Gateway Endpoints covering S3/DynamoDB traffic to reduce what has to go through NAT at all. Revisit NAT Gateway if/when a real availability requirement shows up.
+**Working conclusion (not yet implemented):** when egress is needed, prefer a NAT Instance in the `Networking` hub over NAT Gateway, sized minimally (`t4g.nano` or smaller), with Gateway Endpoints covering S3/DynamoDB traffic to reduce what has to go through NAT at all. Revisit NAT Gateway only if a real availability requirement shows up and the topology moves to Transit Gateway — it is not an option under plain VPC Peering.
