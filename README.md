@@ -189,12 +189,12 @@ Supporting evidence lives under [`docs/evidence/`](docs/evidence/) — checked o
 - [x] Identity Center: [groups](docs/evidence/identity-center-groups.png), [permission sets](docs/evidence/identity-center-permission-sets.png) ([Administrator](docs/evidence/permission-set-administrator-access.png), [ReadOnly](docs/evidence/permission-set-readonly-access.png), [Developer](docs/evidence/permission-set-developer-access.png) + its [inline policy](docs/evidence/developer-access-inline-policy.png)), account assignments ([management](docs/evidence/identity-center-account-assignment-management.png), [SCP-test](docs/evidence/identity-center-account-assignment-scp-test.png)), and the portal as seen by [an admin](docs/evidence/identity-center-portal-admin-view.png) vs. [a developer](docs/evidence/identity-center-portal-developer-view.png)
 - [x] SCP #2 (deny Transit Gateway): [console screenshot of the policy as created](docs/evidence/scp2-created-deny-transit-gateway.png)
 - [ ] SCP #1, #2, and #3 verification evidence (a denied and an allowed API call for each)
-- [ ] `terraform plan` / `terraform apply` output for each major milestone
+- [ ] [`terraform plan`](./docs/evidence/terraform-plan.md) / [`terraform apply`](./docs/evidence/terraform-apply.md) output for each major milestone
 - [ ] Console screenshots: CloudWatch billing alarm and Budget configuration
 - [ ] `aws organizations list-accounts` / `list-organizational-units-for-parent` snapshot of the final structure
 - [ ] VPC peering evidence once the first workload VPC exists
 
 ---
 
-> **Status: v1.0 — documentation complete.**
+> **Phase 1: Foundation — complete. Phase 2: Workloads — in progress**
 > Everything above reflects what's built and verified as of this writing. Open items — inviting the Route 53 account, standing up `Shared Services`, provisioning Dev/Staging/Prod, and building the VPC Peering connections — are tracked in [Status & Progress](#status--progress).

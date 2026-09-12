@@ -1,9 +1,3 @@
----
-title: Guardrail Strategy
-status: ready
-date: 2026-08-20
----
-
 # ADR-003: Guardrail Strategy (Control Tower Controls vs. Custom SCPs)
 
 ## Status
