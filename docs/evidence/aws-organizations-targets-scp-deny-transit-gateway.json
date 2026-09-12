@@ -1,0 +1,28 @@
+{
+    "Targets": [
+        {
+            "TargetId": "ou-wfup-2h5futdy",
+            "Arn": "arn:aws:organizations::189053741492:ou/o-r1e3db1vbq/ou-wfup-2h5futdy",
+            "Name": "Workloads",
+            "Type": "ORGANIZATIONAL_UNIT"
+        },
+        {
+            "TargetId": "ou-wfup-858qj8pv",
+            "Arn": "arn:aws:organizations::189053741492:ou/o-r1e3db1vbq/ou-wfup-858qj8pv",
+            "Name": "Infrastructure",
+            "Type": "ORGANIZATIONAL_UNIT"
+        },
+        {
+            "TargetId": "ou-wfup-7taopy61",
+            "Arn": "arn:aws:organizations::189053741492:ou/o-r1e3db1vbq/ou-wfup-7taopy61",
+            "Name": "Policy Staging",
+            "Type": "ORGANIZATIONAL_UNIT"
+        },
+        {
+            "TargetId": "ou-wfup-8r0fmvb4",
+            "Arn": "arn:aws:organizations::189053741492:ou/o-r1e3db1vbq/ou-wfup-8r0fmvb4",
+            "Name": "Sandbox",
+            "Type": "ORGANIZATIONAL_UNIT"
+        }
+    ]
+}

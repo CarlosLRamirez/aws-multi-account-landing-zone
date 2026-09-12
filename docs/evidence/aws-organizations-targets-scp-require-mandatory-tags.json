@@ -1,0 +1,10 @@
+{
+    "Targets": [
+        {
+            "TargetId": "ou-wfup-2h5futdy",
+            "Arn": "arn:aws:organizations::189053741492:ou/o-r1e3db1vbq/ou-wfup-2h5futdy",
+            "Name": "Workloads",
+            "Type": "ORGANIZATIONAL_UNIT"
+        }
+    ]
+}

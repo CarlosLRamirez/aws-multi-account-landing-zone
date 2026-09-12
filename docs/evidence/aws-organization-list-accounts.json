@@ -1,0 +1,95 @@
+{
+  "Accounts": [
+    {
+      "Id": "784620264612",
+      "Arn": "arn:aws:organizations::189053741492:account/o-r1e3db1vbq/784620264612",
+      "Email": "REDACTED",
+      "Name": "Aggregator account",
+      "Status": "ACTIVE",
+      "State": "ACTIVE",
+      "Paths": [
+        "o-r1e3db1vbq/r-wfup/ou-wfup-c45wpcwh/784620264612/"
+      ],
+      "JoinedMethod": "CREATED",
+      "JoinedTimestamp": "2026-08-17T13:08:53.519000-06:00"
+    },
+    {
+      "Id": "989208155300",
+      "Arn": "arn:aws:organizations::189053741492:account/o-r1e3db1vbq/989208155300",
+      "Email": "REDACTED",
+      "Name": "Audit",
+      "Status": "SUSPENDED",
+      "State": "CLOSED",
+      "Paths": [
+        "o-r1e3db1vbq/r-wfup/ou-wfup-ev1w104h/989208155300/"
+      ],
+      "JoinedMethod": "CREATED",
+      "JoinedTimestamp": "2026-08-17T12:57:56.579000-06:00"
+    },
+    {
+      "Id": "189053741492",
+      "Arn": "arn:aws:organizations::189053741492:account/o-r1e3db1vbq/189053741492",
+      "Email": "REDACTED",
+      "Name": "MyLandingZone2027",
+      "Status": "ACTIVE",
+      "State": "ACTIVE",
+      "Paths": [
+        "o-r1e3db1vbq/r-wfup/189053741492/"
+      ],
+      "JoinedMethod": "INVITED",
+      "JoinedTimestamp": "2026-08-17T12:45:43.760000-06:00"
+    },
+    {
+      "Id": "984419530194",
+      "Arn": "arn:aws:organizations::189053741492:account/o-r1e3db1vbq/984419530194",
+      "Email": "REDACTED",
+      "Name": "LogArchive",
+      "Status": "ACTIVE",
+      "State": "ACTIVE",
+      "Paths": [
+        "o-r1e3db1vbq/r-wfup/ou-wfup-c45wpcwh/984419530194/"
+      ],
+      "JoinedMethod": "CREATED",
+      "JoinedTimestamp": "2026-08-17T13:07:23.212000-06:00"
+    },
+    {
+      "Id": "376834080797",
+      "Arn": "arn:aws:organizations::189053741492:account/o-r1e3db1vbq/376834080797",
+      "Email": "REDACTED",
+      "Name": "SCP-TEST",
+      "Status": "SUSPENDED",
+      "State": "CLOSED",
+      "Paths": [
+        "o-r1e3db1vbq/r-wfup/ou-wfup-ev1w104h/376834080797/"
+      ],
+      "JoinedMethod": "CREATED",
+      "JoinedTimestamp": "2026-08-24T11:36:51.207000-06:00"
+    },
+    {
+      "Id": "623609441070",
+      "Arn": "arn:aws:organizations::189053741492:account/o-r1e3db1vbq/623609441070",
+      "Email": "REDACTED",
+      "Name": "Networking",
+      "Status": "ACTIVE",
+      "State": "ACTIVE",
+      "Paths": [
+        "o-r1e3db1vbq/r-wfup/ou-wfup-858qj8pv/623609441070/"
+      ],
+      "JoinedMethod": "CREATED",
+      "JoinedTimestamp": "2026-09-07T22:37:00.334000-06:00"
+    },
+    {
+      "Id": "204957733187",
+      "Arn": "arn:aws:organizations::189053741492:account/o-r1e3db1vbq/204957733187",
+      "Email": "REDACTED",
+      "Name": "Networking",
+      "Status": "SUSPENDED",
+      "State": "CLOSED",
+      "Paths": [
+        "o-r1e3db1vbq/r-wfup/ou-wfup-ev1w104h/204957733187/"
+      ],
+      "JoinedMethod": "CREATED",
+      "JoinedTimestamp": "2026-09-03T19:33:20.086000-06:00"
+    }
+  ]
+}

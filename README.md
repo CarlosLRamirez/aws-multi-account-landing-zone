@@ -189,9 +189,10 @@ Supporting evidence lives under [`docs/evidence/`](docs/evidence/) — checked o
 - [x] Identity Center: [groups](docs/evidence/identity-center-groups.png), [permission sets](docs/evidence/identity-center-permission-sets.png) ([Administrator](docs/evidence/permission-set-administrator-access.png), [ReadOnly](docs/evidence/permission-set-readonly-access.png), [Developer](docs/evidence/permission-set-developer-access.png) + its [inline policy](docs/evidence/developer-access-inline-policy.png)), account assignments ([management](docs/evidence/identity-center-account-assignment-management.png), [SCP-test](docs/evidence/identity-center-account-assignment-scp-test.png)), and the portal as seen by [an admin](docs/evidence/identity-center-portal-admin-view.png) vs. [a developer](docs/evidence/identity-center-portal-developer-view.png)
 - [x] SCP #2 (deny Transit Gateway): [console screenshot of the policy as created](docs/evidence/scp2-created-deny-transit-gateway.png)
 - [ ] SCP #1, #2, and #3 verification evidence (a denied and an allowed API call for each)
-- [ ] [`terraform plan`](./docs/evidence/terraform-plan.md) / [`terraform apply`](./docs/evidence/terraform-apply.md) output for each major milestone
-- [ ] Console screenshots: CloudWatch billing alarm and Budget configuration
-- [ ] `aws organizations list-accounts` / `list-organizational-units-for-parent` snapshot of the final structure
+- [x] SCP definitions and OU attachments via CLI: [`list-policies`](docs/evidence/aws-organizations-list-scps.json), targets for [EC2 type restriction](docs/evidence/aws-organizations-targets-scp-restrict-ec2-instance-types.json), [deny Transit Gateway](docs/evidence/aws-organizations-targets-scp-deny-transit-gateway.json), [mandatory tags](docs/evidence/aws-organizations-targets-scp-require-mandatory-tags.json)
+- [x] [`terraform plan`](./docs/evidence/terraform-plan.md) / [`terraform apply`](./docs/evidence/terraform-apply.md) output for each major milestone
+- [x] CloudWatch billing alarm and Budget configuration, via CLI: [`describe-alarms`](docs/evidence/aws-cloudwatch-alarms.json) / [`describe-budgets`](docs/evidence/aws-budgets-describe.json)
+- [x] Org structure snapshot via CLI: [`list-accounts`](docs/evidence/aws-organization-list-accounts.json) / [`list-organizational-units-for-parent`](docs/evidence/aws-organization-list-ous-root.json) (root level)
 - [ ] VPC peering evidence once the first workload VPC exists
 
 ---

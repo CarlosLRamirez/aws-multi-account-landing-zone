@@ -1,0 +1,31 @@
+{
+    "Budgets": [
+        {
+            "BudgetName": "Budget-LandingZone",
+            "BudgetLimit": {
+                "Amount": "10.0",
+                "Unit": "USD"
+            },
+            "TimeUnit": "MONTHLY",
+            "TimePeriod": {
+                "Start": "2026-07-31T18:00:00-06:00",
+                "End": "2087-06-14T18:00:00-06:00"
+            },
+            "CalculatedSpend": {
+                "ActualSpend": {
+                    "Amount": "0.564",
+                    "Unit": "USD"
+                }
+            },
+            "BudgetType": "COST",
+            "LastUpdatedTime": "2026-09-12T07:14:19.297000-06:00",
+            "Metrics": [
+                "UnblendedCost"
+            ],
+            "HealthStatus": {
+                "Status": "HEALTHY",
+                "LastUpdatedTime": "2026-09-12T07:14:18.790000-06:00"
+            }
+        }
+    ]
+}

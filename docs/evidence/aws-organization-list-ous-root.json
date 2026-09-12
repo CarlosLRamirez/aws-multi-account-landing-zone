@@ -1,0 +1,34 @@
+{
+    "OrganizationalUnits": [
+        {
+            "Id": "ou-wfup-2h5futdy",
+            "Arn": "arn:aws:organizations::189053741492:ou/o-r1e3db1vbq/ou-wfup-2h5futdy",
+            "Name": "Workloads"
+        },
+        {
+            "Id": "ou-wfup-7taopy61",
+            "Arn": "arn:aws:organizations::189053741492:ou/o-r1e3db1vbq/ou-wfup-7taopy61",
+            "Name": "Policy Staging"
+        },
+        {
+            "Id": "ou-wfup-858qj8pv",
+            "Arn": "arn:aws:organizations::189053741492:ou/o-r1e3db1vbq/ou-wfup-858qj8pv",
+            "Name": "Infrastructure"
+        },
+        {
+            "Id": "ou-wfup-8r0fmvb4",
+            "Arn": "arn:aws:organizations::189053741492:ou/o-r1e3db1vbq/ou-wfup-8r0fmvb4",
+            "Name": "Sandbox"
+        },
+        {
+            "Id": "ou-wfup-c45wpcwh",
+            "Arn": "arn:aws:organizations::189053741492:ou/o-r1e3db1vbq/ou-wfup-c45wpcwh",
+            "Name": "Security"
+        },
+        {
+            "Id": "ou-wfup-ev1w104h",
+            "Arn": "arn:aws:organizations::189053741492:ou/o-r1e3db1vbq/ou-wfup-ev1w104h",
+            "Name": "ClosedAccounts"
+        }
+    ]
+}
