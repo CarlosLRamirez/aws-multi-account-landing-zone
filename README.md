@@ -91,16 +91,6 @@ How this actually got built, in order.
 - A `ClosedAccounts` OU holds a few closed, inert accounts (an early wizard artifact, a decommissioned test account, one earlier attempt at this account) so they're not left scattered around — Control Tower won't register an OU that contains a closed account.
 - Still open: the actual VPC Peering connections to the workload VPCs.
 
-## Rebuilding This From Scratch
-
-The walkthrough above is what actually happened, detours included. Building this again mostly collapses into reading the ADRs in order (ADR-001 → 002 → 003 → 005 → 004) and running `terraform apply` a handful of times. Concretely, I wouldn't:
-
-- Create `Networking` directly through Organizations to dodge the Control Tower baseline cost — the CloudTrail/Config/SCP coverage it gives up isn't worth the savings. Go through Account Factory from the start.
-- Write the CIDR plan as one `/20` per environment — write it as one `/20` per environment _per project_, since a second project sharing an environment tier is a "when," not an "if."
-- Run the Control Tower wizard without double-checking the session first — that's what turned a clean 2-account setup into 3.
-
-Everything else held up as-is: hardening Identity Center right after the wizard, the billing alarm before anything else gets created, VPC Peering over Transit Gateway, and testing SCPs in isolation before attaching them for real.
-
 ## Provisioning a New Workload Account
 
 The steps above cover bootstrapping this once. This is the repeatable flow for adding another account later — say, a `MyAppDev` account for a new project's Dev environment:
