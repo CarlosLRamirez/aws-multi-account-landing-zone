@@ -1,14 +1,8 @@
----
-title: IaC Strategy (Terraform)
-status: draft
-date: 2026-08-30
----
-
 # ADR-005: IaC Strategy (Terraform)
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

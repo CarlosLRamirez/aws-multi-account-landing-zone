@@ -1,14 +1,8 @@
----
-title: Networking Strategy
-status: draft
-date: 2026-09-03
----
-
 # ADR-004: Networking Strategy (VPC Peering over Transit Gateway)
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -43,6 +37,7 @@ In summary: `Networking` hub and `Shared Services` each get a `/21`; 4 more `/21
 Three different internal layouts: `Networking`, workload accounts, and Sandbox accounts (full subnet tables in `docs/ip-address-plan.md`):
 
 #### Workload VPC
+
 - The Terraform module `vpc-baseline` is included with the VPC template and the planned subnet mapping — implemented as a reusable module, instantiated once per workload account. CIDR values must be specified manually, using [`docs/ip-address-plan.md`](../ip-address-plan.md) as the reference; this is not automatic.
 - Three AZs are considered. Each AZ has four `/24` subnets. The first three match a three-layer architecture: Web (Public), App (Private), and Data (Private).
 - A fourth `/24` is reserved in the IP plan for a possible fourth layer if needed later, but it's not included as an `aws_subnet` resource in the `vpc-baseline` module.
@@ -52,15 +47,18 @@ Three different internal layouts: `Networking`, workload accounts, and Sandbox a
 - Each VPC has its own Internet Gateway for the public part. A NAT Gateway is not planned for now — a deliberate decision for cost reasons, detailed in the Consequences section below.
 
 #### Sandbox VPC
+
 - Smaller footprint, since sandbox workloads don't need production-grade capacity: 2 AZs, one Public + two Private `/26` subnets per AZ.
 - A separate module, `terraform/modules/vpc-sandbox` available to faciliatate the deployemnet.
 
 #### Networking Hub VPC
-- One Private + one Public (Future) subnet per AZ across 3 AZs. "Public (Future)" subnets are provisioned now but carry **no Internet Gateway and no route to one yet** — they reserve the address space and AZ placement for the day this account centralizes egress (NAT Instance/Gateway) per the "Networking Considerations" section below, without requiring a resize later. 
-- This account still runs no application workloads — the Private subnets remain the peering attachment points, and a future Virtual Private Gateway would land its propagated routes there too. 
+
+- One Private + one Public (Future) subnet per AZ across 3 AZs. "Public (Future)" subnets are provisioned now but carry **no Internet Gateway and no route to one yet** — they reserve the address space and AZ placement for the day this account centralizes egress (NAT Instance/Gateway) per the "Networking Considerations" section below, without requiring a resize later.
+- This account still runs no application workloads — the Private subnets remain the peering attachment points, and a future Virtual Private Gateway would land its propagated routes there too.
 - Kept as plain resources in `terraform/networking.tf` rather than either workload module.
 
 #### Cross-account Terraform
+
 The `Networking` account's VPC is managed via the `networking` provider alias — see ADR-005 for the general cross-account provider-alias pattern this follows. `Networking` was created via Account Factory, so its alias assumes Control Tower's `AWSControlTowerExecution` role. Future accounts provisioned the same way (Dev, Staging, Prod) will follow the same pattern once they exist.
 
 ## Consequences
@@ -93,12 +91,12 @@ Notes for when the Landing Zone needs real internet access. Not implemented yet,
 
 **NAT Gateway vs. NAT Instance — cost trade-off for a personal-lab context.** This table is a general comparison. Under VPC Peering, only the NAT Instance column is actually usable for centralized egress — the NAT Gateway column would only apply if the topology moves to Transit Gateway later (see Alternatives Considered).
 
-| | NAT Gateway (managed) | NAT Instance (EC2) |
-| --- | --- | --- |
-| Cost | ~$32/month fixed + $0.045/GB processed | ~$3/month (`t4g.nano`, on-demand) + standard EC2 data transfer |
-| Availability | Managed, AZ-resilient | Single point of failure unless built HA manually |
-| Maintenance | None (AWS-managed) | OS patching, iptables/NAT config, AMI upgrades |
-| Throughput | Scales automatically (up to 100 Gbps) | Capped by instance size |
+|              | NAT Gateway (managed)                  | NAT Instance (EC2)                                             |
+| ------------ | -------------------------------------- | -------------------------------------------------------------- |
+| Cost         | ~$32/month fixed + $0.045/GB processed | ~$3/month (`t4g.nano`, on-demand) + standard EC2 data transfer |
+| Availability | Managed, AZ-resilient                  | Single point of failure unless built HA manually               |
+| Maintenance  | None (AWS-managed)                     | OS patching, iptables/NAT config, AMI upgrades                 |
+| Throughput   | Scales automatically (up to 100 Gbps)  | Capped by instance size                                        |
 
 For this Landing Zone's actual traffic profile (personal lab, no production SLA), a **NAT Instance is the better cost fit** — roughly 10x cheaper than NAT Gateway, and the availability/throughput ceiling a `t4g.nano` imposes is not a real constraint here. NAT Gateway's managed reliability is worth paying for once there's a workload with an actual uptime requirement, not before.
 

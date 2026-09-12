@@ -1,8 +1,6 @@
 # IP Address Plan
 
-This is the base CIDR allocation for the landing zone as designed — what was allocated, what was reserved, and why. It's a snapshot, not a living document: this repository documents the landing zone build up to a fixed point, and anything built afterward (real workloads, further allocation) belongs in that project's own repository. The design rationale (why a hierarchical scheme replaced a flat one, why three VPC layouts instead of one) lives in [ADR-004](adr/ADR-004-Networking-Strategy.md).
-
-Last updated: 2026-09-07.
+This is the base CIDR allocation for the landing zone as designed — what was allocated, what was reserved, and why. It's a snapshot, not a living document: this repository documents the landing zone build up to a fixed point, and anything built afterward (real workloads, further allocation) belongs in that project's own repository. The design rationale (why a hierarchical scheme replaced a flat one, why three VPC layouts instead of one) lives in [ADR-004](/docs/adr/ADR-004-Networking-Strategy.md).
 
 ## Organization-level allocation
 
@@ -31,7 +29,7 @@ Three distinct shapes, per ADR-004 — `Networking`, workload accounts, and Sand
 
 ### `Networking` hub — `10.0.0.0/21` (in use)
 
-3 AZs, `/24` subnets (newbits 3 from the `/21`, 8 slots total). Built as plain resources in [`terraform/networking.tf`](../terraform/networking.tf), not a module.
+  3 AZs, `/24` subnets (newbits 3 from the `/21`, 8 slots total). Built as plain resources in [`terraform/networking.tf`](../terraform/networking.tf), not a module.
 
 | CIDR | AZ | Subnet Type |
 | --- | --- | --- |
@@ -81,8 +79,3 @@ Three distinct shapes, per ADR-004 — `Networking`, workload accounts, and Sand
 | +6 | — | Reserved |
 | +7 | — | Reserved |
 
-## Change log
-
-- **2026-09-07 (later same day)** — Closed the `Networking` account entirely and recreated it via Account Factory (Account ID `623609441070`), so it's Control Tower-managed from birth instead of retrofitting enrollment onto it (see ADR-004's "Control Tower Enrollment"). Rebuilt the hub VPC a second time on the same `/21` design, now in the new account: `vpc-021f251e55eebe1cf`.
-- **2026-09-07** — Superseded the flat 5×`/20` plan (one `/20` per account, no reserved growth space) with this hierarchical scheme. Rebuilt the `Networking` hub VPC on its new `/21` (destroy+recreate, no peering existed yet so no live dependency broke). Rewrote `vpc-baseline` for 3 AZs/3 tiers and added `vpc-sandbox` as a separate module.
-- **2026-09-04** — Original flat plan: `Networking` `10.0.0.0/20`, Dev `10.1.0.0/20`, Staging `10.2.0.0/20`, Prod `10.3.0.0/20`, Sandbox `10.4.0.0/20`. Superseded above.
