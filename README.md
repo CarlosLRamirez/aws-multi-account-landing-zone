@@ -57,7 +57,7 @@ How this actually got built, in order.
 
 - New AWS account as the management account, MFA on root.
 - Temporary IAM admin user with MFA for the initial setup, billing access enabled, Budget + CloudWatch billing alarm set up before touching anything else.
-- Ran the Control Tower wizard: it created `LogArchive` (CloudTrail) and `Aggregator account` (Config). A stray `Audit` account also got created and closed after a session timeout mid-wizard — Control Tower v4.0 doesn't actually need a separate Audit account. Left it to age out after 90 days.
+- Ran the Control Tower wizard: it created `LogArchive` (CloudTrail) and `Aggregator account` (Config).
 - Created the OUs the wizard doesn't: Infrastructure, Workloads, Dev, Staging, Prod, Policy Staging (ADR-001).
 - Registered Policy Staging with Control Tower.
 
