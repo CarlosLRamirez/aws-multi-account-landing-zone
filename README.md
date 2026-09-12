@@ -134,7 +134,7 @@ None of this is unfamiliar — it's just not justified yet by what this environm
 
 ## Status & Progress
 
-**Foundation**
+#### Foundation
 
 - [x] Management account created, root MFA, temporary bootstrap IAM user
 - [x] Budget + CloudWatch billing alarm
@@ -142,13 +142,13 @@ None of this is unfamiliar — it's just not justified yet by what this environm
 - [x] Control Tower wizard run; missing OUs created (Infrastructure, Workloads, Dev, Staging, Prod, Policy Staging); Policy Staging registered with Control Tower
 - [x] ADR-002 (foundational accounts) documented
 
-**Identity & access**
+#### Identity & access
 
 - [x] Identity Center groups (`platform-admins`, `developers`, `readonly-auditors`) and permission sets (`AdministratorAccess`, `ReadOnlyAccess`, custom `DeveloperAccess`)
 - [x] Real users created, auto-generated user deleted, portal URL customized
 - [x] `breakglass` + `BreakGlassAdminRole` (MFA-gated) replacing the bootstrap IAM user
 
-**Guardrails**
+#### Guardrails
 
 - [x] ADR-003 (guardrail strategy) documented
 - [x] `SCP-test` account created and used to test all 3 SCPs manually (positive + negative), then decommissioned
@@ -157,7 +157,7 @@ None of this is unfamiliar — it's just not justified yet by what this environm
 - [x] Existing OUs and SCPs codified and imported into Terraform state, `plan` confirms zero drift
 - [x] All 3 SCPs attached via Terraform: EC2 type restriction (Dev, Staging, Sandbox), deny Transit Gateway (org-wide except Security), mandatory tags (Workloads)
 
-**Networking**
+#### Networking
 
 - [x] ADR-004 (networking strategy) documented — VPC Peering hub-and-spoke via `Networking`, no Transit Gateway exception
 - [x] `Networking` account provisioned via Account Factory, full Control Tower baseline
@@ -167,7 +167,7 @@ None of this is unfamiliar — it's just not justified yet by what this environm
 - [x] Hub VPC applied (private + public-future subnets, no IGW)
 - [x] Identity Center access assigned to `Networking`
 
-**Open**
+#### Open
 
 - [ ] Invite the existing Route 53 account into the org, under Infrastructure OU
 - [ ] Create `Shared Services` under Infrastructure OU
@@ -186,9 +186,11 @@ None of this is unfamiliar — it's just not justified yet by what this environm
 Supporting evidence lives under [`docs/evidence/`](docs/evidence/) — checked off as it's captured, not retroactively.
 
 - [x] Console screenshot: [final Organizations OU/account tree](docs/evidence/lz2026-OUs-accounts.png)
+- [x] Identity Center: [groups](docs/evidence/identity-center-groups.png), [permission sets](docs/evidence/identity-center-permission-sets.png) ([Administrator](docs/evidence/permission-set-administrator-access.png), [ReadOnly](docs/evidence/permission-set-readonly-access.png), [Developer](docs/evidence/permission-set-developer-access.png) + its [inline policy](docs/evidence/developer-access-inline-policy.png)), account assignments ([management](docs/evidence/identity-center-account-assignment-management.png), [SCP-test](docs/evidence/identity-center-account-assignment-scp-test.png)), and the portal as seen by [an admin](docs/evidence/identity-center-portal-admin-view.png) vs. [a developer](docs/evidence/identity-center-portal-developer-view.png)
+- [x] SCP #2 (deny Transit Gateway) lifecycle: [created](docs/evidence/scp2-created-deny-transit-gateway.png), plus screen recordings of the [creation](docs/evidence/scp2-create-recording.mov), the [negative test](docs/evidence/scp2-negative-test-recording.mov) (denied), and the [detach](docs/evidence/scp2-detach-recording.mov)
+- [ ] SCP #1 and #3 verification evidence (a denied and an allowed API call for each)
 - [ ] `terraform plan` / `terraform apply` output for each major milestone
-- [ ] Console screenshots: Identity Center portal, billing alarm, Budget configuration
-- [ ] SCP verification: a denied and an allowed API call for each of the 3 SCPs
+- [ ] Console screenshots: CloudWatch billing alarm and Budget configuration
 - [ ] `aws organizations list-accounts` / `list-organizational-units-for-parent` snapshot of the final structure
 - [ ] VPC peering evidence once the first workload VPC exists
 
