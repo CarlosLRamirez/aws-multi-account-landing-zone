@@ -16,7 +16,7 @@ Two `/16`s are allocated (`10.0.0.0/16`, `10.1.0.0/16`); only the first slot of 
 | `10.0.40.0/21` | Cross-cutting / security tooling | Reserved — no account identified |
 | `10.0.48.0/23` | Sandbox pool, slot 1 | Reserved — Sandbox account not created yet |
 | `10.0.50.0/23` – `10.0.62.0/23` (7× `/23`) | Sandbox pool, slots 2–8 | Reserved — future Sandbox accounts |
-| `10.0.64.0/20` | Dev pool, slot 1 | Reserved — Dev account not created yet |
+| `10.0.64.0/20` | Dev pool, slot 1 — `MyWebApp-dev` | **In use** |
 | `10.0.80.0/20` – `10.0.176.0/20` (7× `/20`) | Dev pool, slots 2–8 | Reserved — future Dev accounts |
 | `10.0.192.0/20` | Staging pool, slot 1 | Reserved — Staging account not created yet |
 | `10.0.208.0/20` – `10.1.48.0/20` (7× `/20`) | Staging pool, slots 2–8 | Reserved — future Staging accounts |
@@ -42,7 +42,9 @@ Three distinct shapes, per ADR-004 — `Networking`, workload accounts, and Sand
 | `10.0.6.0/24` | — | Reserved |
 | `10.0.7.0/24` | — | Reserved |
 
-"Public (Future)" subnets are provisioned now but carry no Internet Gateway and no route to one — they reserve address space and AZ placement for a future centralized-egress NAT (see ADR-004's "Networking Considerations"). Deployed: `aws_vpc.networking_hub` = `vpc-021f251e55eebe1cf`, in account `623609441070` (Account-Factory-provisioned, full Control Tower baseline — see ADR-004's "Control Tower Enrollment").
+"Public (Future)" subnets are provisioned now but carry no Internet Gateway and no route to one — they reserve address space and AZ placement for a future centralized-egress NAT (see ADR-004's "Networking Considerations").
+
+Deployed: `aws_vpc.networking_hub` = `vpc-021f251e55eebe1cf`, in account `623609441070` (Account-Factory-provisioned, full Control Tower baseline — see ADR-004's "Control Tower Enrollment").
 
 ### Workload VPCs (Dev, Staging, Prod) — `vpc-baseline` module
 
@@ -64,6 +66,22 @@ Three distinct shapes, per ADR-004 — `Networking`, workload accounts, and Sand
 | +11 | C | Reserved / TBD |
 | +12 – +15 | — | Reserved for future `/23` expansion |
 
+#### `MyWebApp-dev` — `10.0.64.0/20` (in use, first instantiation of `vpc-baseline`)
+
+| CIDR | AZ | Subnet Type |
+| --- | --- | --- |
+| `10.0.64.0/24` | A | Public (Web) |
+| `10.0.65.0/24` | A | Private (App) |
+| `10.0.66.0/24` | A | Private (Data) |
+| `10.0.68.0/24` | B | Public (Web) |
+| `10.0.69.0/24` | B | Private (App) |
+| `10.0.70.0/24` | B | Private (Data) |
+| `10.0.72.0/24` | C | Public (Web) |
+| `10.0.73.0/24` | C | Private (App) |
+| `10.0.74.0/24` | C | Private (Data) |
+
+Peered to the `Networking` hub (`10.0.0.0/21`) — `pcx-00a6c63aeeb9f75b7`, `Active`, first VPC Peering connection built under ADR-004's hub-and-spoke topology. Evidence: [`scp-verification-tests.md`](evidence/scp-verification-tests.md) covers the SCP side; peering itself is in [`docs/evidence/aws-describe-vpc-peering-networking-hub.json`](evidence/aws-describe-vpc-peering-networking-hub.json) and the [console screenshots](evidence/vpc-peering-active-mywebapp-dev.png).
+
 ### Sandbox VPCs — `vpc-sandbox` module
 
 2 AZs, `/26` subnets (newbits 3 from a `/23`, 8 slots total, 6 used). Module: [`terraform/modules/vpc-sandbox`](../terraform/modules/vpc-sandbox). Not yet instantiated — no Sandbox account exists yet. Pattern shown below applies to whichever `/23` slot a Sandbox account uses (slot 1 is `10.0.48.0/23`).
@@ -78,4 +96,3 @@ Three distinct shapes, per ADR-004 — `Networking`, workload accounts, and Sand
 | +5 | B | Private |
 | +6 | — | Reserved |
 | +7 | — | Reserved |
-

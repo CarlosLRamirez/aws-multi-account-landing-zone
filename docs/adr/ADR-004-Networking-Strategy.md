@@ -61,6 +61,14 @@ Three different internal layouts: `Networking`, workload accounts, and Sandbox a
 
 The `Networking` account's VPC is managed via the `networking` provider alias — see ADR-005 for the general cross-account provider-alias pattern this follows. `Networking` was created via Account Factory, so its alias assumes Control Tower's `AWSControlTowerExecution` role. Future accounts provisioned the same way (Dev, Staging, Prod) will follow the same pattern once they exist.
 
+#### First peering connection (2026-09-14)
+
+`MyWebApp-dev` — the first Workload account, first slot of the Dev pool (`10.0.64.0/20`) — is the first real instantiation of `vpc-baseline` and the first VPC Peering connection built under this hub-and-spoke topology (`pcx-00a6c63aeeb9f75b7`, hub ↔ `MyWebApp-dev`, `Active`). Cross-account peering needs an explicit `aws_vpc_peering_connection_accepter` on the spoke side — `auto_accept` only works within a single account — plus routes added on both sides once the connection is confirmed active (`depends_on` the accepter, since AWS rejects routes against a not-yet-active connection).
+
+Building it surfaced a real bug in `vpc-baseline`: its public route table declared the default route to the Internet Gateway as an inline `route { }` block, which makes Terraform treat that block as the *complete* set of routes for the table — any externally-added `aws_route` (like the new peering route) gets silently removed on the next apply. Fixed by converting that inline route to a standalone `aws_route` resource (matching how the private route table, and the peering routes themselves, were already declared), then `terraform import`-ing the pre-existing IGW route into it instead of letting Terraform try to recreate it. Evidence: [`docs/evidence/scp-verification-tests.md`](../evidence/scp-verification-tests.md) covers the SCP side of this account; the peering connection itself is in [`docs/evidence/aws-describe-vpc-peering-networking-hub.json`](../evidence/aws-describe-vpc-peering-networking-hub.json) and the console screenshots referenced from [`docs/ip-address-plan.md`](../ip-address-plan.md).
+
+This fix lives in the shared module, so Staging and Prod won't hit it again — but it's a pattern worth remembering: never mix inline `route { }` blocks with standalone `aws_route` resources targeting the same route table.
+
 ## Consequences
 
 **Positive:**

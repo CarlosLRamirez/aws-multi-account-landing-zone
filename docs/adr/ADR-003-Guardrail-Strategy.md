@@ -70,6 +70,10 @@ Why: This SCP supports a future need. It does not only prevent risk. This landin
 
 Note: We originally proposed this for all OUs except Security. We changed it to Workloads OU when we attached it. Infrastructure and Policy Staging do not host project workloads. Sandbox is excluded for the same reason.
 
+## Verification
+
+All three SCPs were re-verified end to end on 2026-09-14, once `MyWebApp-dev` (the first Workload account) existed: `SCP-test` was reopened and parked in `Policy Staging` (rather than closed again, to avoid repeating the close → support-ticket → reopen cycle next time it's needed), and SCP #1/#3 were temporarily re-attached there for the test (SCP #2 was already attached permanently). Every case — a denied and an allowed API call for each policy — used `--dry-run`, so nothing was actually created. Full transcripts: [`docs/evidence/scp-verification-tests.md`](../evidence/scp-verification-tests.md).
+
 ## Consequences
 
 Positive: It fixes the actual safety gap from default Control Tower controls. Workloads get baseline protection. We do not rely on people remembering the rules. All three SCPs apply to every new account in those OUs automatically. You do not need extra setup for each account.

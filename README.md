@@ -11,7 +11,8 @@ This isn't a step-by-step tutorial. It covers what got built, why, and what I'd 
 - An AWS Organization under Control Tower 4.0
 - `LogArchive` and `Aggregator account` (Control Tower-managed) under the Security OU
 - A `Networking` account under the Infrastructure OU, provisioned via Account Factory with the full Control Tower baseline, hub VPC built in Terraform
-- Empty OUs reserved for what's next: Sandbox, Workloads (Dev/Staging/Prod), Policy Staging
+- `MyWebApp-dev` — the first Workload account (Dev), also provisioned via Account Factory — with its own `vpc-baseline` instantiation and a live VPC Peering connection to the `Networking` hub
+- Empty OUs reserved for what's next: Sandbox, Staging, Prod
 - Control Tower's 13 default preventive controls, plus 3 custom SCPs managed in Terraform:
   - Restrict EC2 instance types (Dev, Staging, Sandbox)
   - Deny Transit Gateway creation, org-wide, no exceptions
@@ -29,14 +30,16 @@ Root
 │   ├── LogArchive            # Control Tower Managed
 │   └── Aggregator account    # Control Tower Managed
 ├── Infrastructure OU
-│   ├── Shared Services       #future
+│   ├── Shared Services       # future
 │   └── Networking
 ├── Sandbox OU                # Labs and experimentation
 ├── Workloads OU              # Operational Environments
 │   ├── Dev OU
+│   │   └── MyWebApp-dev      # first workload account, peered to Networking
 │   ├── Staging OU
 │   └── Prod OU
 ├── Policy Staging OU
+│   └── SCP-test              # parked here, active but unused (see Guardrails)
 └── ClosedAccounts OU
 ```
 
@@ -89,17 +92,25 @@ How this actually got built, in order.
 - Hub VPC built directly in [`terraform/networking.tf`](terraform/networking.tf) — private + "public (future)" subnets across 3 AZs, no Internet Gateway yet.
 - Two reusable modules written for later: [`terraform/modules/vpc-baseline`](terraform/modules/vpc-baseline) (Dev/Staging/Prod) and [`terraform/modules/vpc-sandbox`](terraform/modules/vpc-sandbox). Neither instantiated yet — those accounts don't exist.
 - A `ClosedAccounts` OU holds a few closed, inert accounts (an early wizard artifact, a decommissioned test account, one earlier attempt at this account) so they're not left scattered around — Control Tower won't register an OU that contains a closed account.
-- Still open: the actual VPC Peering connections to the workload VPCs.
+
+### 6. First workload account and VPC Peering
+
+- Registering `Workloads`/`Dev` with Control Tower required registering the parent `Workloads` OU first — registration doesn't cascade to children automatically.
+- `MyWebApp-dev` provisioned via Account Factory into `Workloads/Dev` — the first account to actually use the `vpc-baseline` module and the CIDR pool reserved for Dev (`10.0.64.0/20`).
+- First real VPC Peering connection built: `MyWebApp-dev` ↔ `Networking` hub, cross-account (explicit accepter on the spoke side, routes added on both sides once the connection confirmed `Active`).
+- Building it surfaced a real bug in `vpc-baseline`: an inline `route { }` block on the public route table was fighting with the externally-added peering route — Terraform kept trying to delete the peering route on every plan. Fixed by converting it to a standalone `aws_route` resource (see [ADR-004](docs/adr/ADR-004-Networking-Strategy.md#first-peering-connection-2026-09-14) for the detail).
+- Identity Center access assigned (`platform-admins`, `developers` — this closed a pending item, `developers`' `DeveloperAccess` on a Dev account had no target until now — and `readonly-auditors`).
+- Reopened `SCP-test` (closed since 2026-09-03) to capture the SCP #1/#2/#3 verification evidence that was still outstanding, using `--dry-run` calls so nothing was actually created. Left it parked, active, in `Policy Staging` afterward instead of closing it again.
 
 ## Provisioning a New Workload Account
 
-The steps above cover bootstrapping this once. This is the repeatable flow for adding another account later — say, a `MyAppDev` account for a new project's Dev environment:
+The steps above cover bootstrapping this once. This is the repeatable flow for adding another account later — `MyWebApp-dev` (above) is the worked example; the same steps apply for Staging/Prod or a second project's Dev environment:
 
-1. **Create the account** via Account Factory (standard path, full CT baseline) or directly via Terraform (`aws_organizations_account`, the exception — only if it deliberately shouldn't carry that baseline yet). Place it under the OU matching its environment tier; SCPs at the OU level apply automatically.
+1. **Create the account** via Account Factory (standard path, full CT baseline) or directly via Terraform (`aws_organizations_account`, the exception — only if it deliberately shouldn't carry that baseline yet). Place it under the OU matching its environment tier — check the OU itself (and its parent) is registered with Control Tower first. SCPs at the OU level apply automatically.
 2. **Pick its CIDR** from the pool reserved for that environment ([`docs/ip-address-plan.md`](docs/ip-address-plan.md) reserves 8 slots per tier). Mark the slot as used.
 3. **Add a provider alias** in `main.tf` — `AWSControlTowerExecution` if it went through Account Factory, `OrganizationAccountAccessRole` if it didn't — same pattern as the `networking` alias.
 4. **Instantiate `vpc-baseline`** pointed at the new alias and its CIDR.
-5. **Peer it to the `Networking` hub.** Still an open item as of this writing, so there's no existing peering to copy from yet — it'll be the first one.
+5. **Peer it to the `Networking` hub.** Explicit accepter on the spoke side (cross-account peering doesn't auto-accept), routes on both sides gated on the connection being `Active` — see `terraform/peering-networking-mywebapp-dev.tf` for the pattern to copy.
 6. **Assign Identity Center access.** Not automatic — creating the account doesn't grant anyone access to it.
 
 ## Cost Discipline
@@ -162,17 +173,26 @@ None of this is unfamiliar — it's just not justified yet by what this environm
 - [x] ADR-004 (networking strategy) documented — VPC Peering hub-and-spoke via `Networking`, no Transit Gateway exception
 - [x] `Networking` account provisioned via Account Factory, full Control Tower baseline
 - [x] Hierarchical CIDR plan ([`docs/ip-address-plan.md`](docs/ip-address-plan.md))
-- [x] Reusable VPC modules written (`vpc-baseline`, `vpc-sandbox`) — not instantiated yet
+- [x] Reusable VPC modules written (`vpc-baseline`, `vpc-sandbox`)
 - [x] Cross-account provider alias (`AWSControlTowerExecution`) for `Networking`
 - [x] Hub VPC applied (private + public-future subnets, no IGW)
 - [x] Identity Center access assigned to `Networking`
+
+### Workloads
+
+- [x] `Workloads`/`Dev` registered with Control Tower
+- [x] `MyWebApp-dev` provisioned via Account Factory — first Workload account, first `vpc-baseline` instantiation, CIDR `10.0.64.0/20`
+- [x] First VPC Peering connection built: `MyWebApp-dev` ↔ `Networking` hub, `Active`
+- [x] `vpc-baseline` module bug fixed (inline route vs. externally-managed peering route conflict)
+- [x] Identity Center access assigned to `MyWebApp-dev` (`platform-admins`, `developers`, `readonly-auditors`)
+- [x] SCP #1/#2/#3 verification evidence captured (denied + allowed for each) via a reopened `SCP-test`
 
 ### Open
 
 - [ ] Invite the existing Route 53 account into the org, under Infrastructure OU
 - [ ] Create `Shared Services` under Infrastructure OU
-- [ ] Create Dev/Staging/Prod accounts, instantiate `vpc-baseline` for each
-- [ ] Build the VPC Peering connections between `Networking` and each workload VPC
+- [ ] Create Staging/Prod accounts, instantiate `vpc-baseline` for each, peer to `Networking`
+- [ ] Put real resources (EC2, ALB) behind `MyWebApp-dev` — Security Groups, target groups, etc. are out of this repo's scope (see [Provisioning a New Workload Account](#provisioning-a-new-workload-account))
 
 ## What I Learned
 
@@ -180,22 +200,25 @@ None of this is unfamiliar — it's just not justified yet by what this environm
 - Environment-first OUs (Dev/Staging/Prod instead of per-project) only pay off once a second project actually shows up — see the CIDR gap that exposed in [Provisioning a New Workload Account](#provisioning-a-new-workload-account). The design was right; the first CIDR plan hadn't accounted for it.
 - Control Tower's wizard asks for a Config Aggregator and a CloudTrail admin as two separate roles, not one "Audit" account — combined with a session timeout, that's how a planned 2-account setup became 3. Worth documenting as it happened (ADR-002) rather than editing history to match the plan.
 - Testing SCPs manually before attaching them changed the final scope in both directions — some got narrower after testing, one got broader (Transit Gateway denial, applied everywhere with no exception, including `Networking` itself). The scope that looked obvious before testing wasn't the scope that survived it.
+- Control Tower OU registration doesn't cascade: registering a child OU (`Dev`) required registering its parent (`Workloads`) first, even though `Workloads` already existed.
+- Mixing an inline `route { }` block with a separately-managed `aws_route` on the same route table is a real Terraform footgun, not a theoretical one — it silently destroyed a live peering route on the first `plan` after adding it. `ec2:RunInstances --dry-run` turned out to be a good way to re-verify SCPs without creating (or having to tear down) real resources.
 
 ## Appendix / Evidence
 
 Supporting evidence lives under [`docs/evidence/`](docs/evidence/) — checked off as it's captured, not retroactively.
 
-- [x] Console screenshot: [final Organizations OU/account tree](docs/evidence/lz2026-OUs-accounts.png)
-- [x] Identity Center: [groups](docs/evidence/identity-center-groups.png), [permission sets](docs/evidence/identity-center-permission-sets.png) ([Administrator](docs/evidence/permission-set-administrator-access.png), [ReadOnly](docs/evidence/permission-set-readonly-access.png), [Developer](docs/evidence/permission-set-developer-access.png) + its [inline policy](docs/evidence/developer-access-inline-policy.png)), account assignments ([management](docs/evidence/identity-center-account-assignment-management.png), [SCP-test](docs/evidence/identity-center-account-assignment-scp-test.png)), and the portal as seen by [an admin](docs/evidence/identity-center-portal-admin-view.png) vs. [a developer](docs/evidence/identity-center-portal-developer-view.png)
+- [x] Console screenshot: [final Organizations OU/account tree](docs/evidence/lz2026-OUs-accounts-final.png) (superseding the earlier [pre-workloads snapshot](docs/evidence/lz2026-OUs-accounts.png))
+- [x] Identity Center: [groups](docs/evidence/identity-center-groups.png), [permission sets](docs/evidence/identity-center-permission-sets.png) ([Administrator](docs/evidence/permission-set-administrator-access.png), [ReadOnly](docs/evidence/permission-set-readonly-access.png), [Developer](docs/evidence/permission-set-developer-access.png) + its [inline policy](docs/evidence/developer-access-inline-policy.png)), account assignments ([management](docs/evidence/identity-center-account-assignment-management.png), [Networking](docs/evidence/identity-center-account-assignment-networking.png), [MyWebApp-dev](docs/evidence/identity-center-account-assignment-mywebapp-dev.png), [SCP-test, reopened](docs/evidence/identity-center-account-assignment-scp-test-reopened.png)), and the portal as seen by [an admin](docs/evidence/identity-center-portal-admin-view.png) vs. [a developer](docs/evidence/identity-center-portal-developer-view.png)
 - [x] SCP #2 (deny Transit Gateway): [console screenshot of the policy as created](docs/evidence/scp2-created-deny-transit-gateway.png)
-- [ ] SCP #1, #2, and #3 verification evidence (a denied and an allowed API call for each)
+- [x] SCP #1, #2, and #3 verification evidence (a denied and an allowed API call for each): [`scp-verification-tests.md`](docs/evidence/scp-verification-tests.md), plus the [attach](docs/evidence/policies-attached-on-SCP-test.json)/[detach](docs/evidence/policies-attached-on-SCP-test-final.json) confirmation for the temporary test attachment
 - [x] SCP definitions and OU attachments via CLI: [`list-policies`](docs/evidence/aws-organizations-list-scps.json), targets for [EC2 type restriction](docs/evidence/aws-organizations-targets-scp-restrict-ec2-instance-types.json), [deny Transit Gateway](docs/evidence/aws-organizations-targets-scp-deny-transit-gateway.json), [mandatory tags](docs/evidence/aws-organizations-targets-scp-require-mandatory-tags.json)
 - [x] [`terraform plan`](./docs/evidence/terraform-plan.md) / [`terraform apply`](./docs/evidence/terraform-apply.md) output for each major milestone
 - [x] CloudWatch billing alarm and Budget configuration, via CLI: [`describe-alarms`](docs/evidence/aws-cloudwatch-alarms.json) / [`describe-budgets`](docs/evidence/aws-budgets-describe.json)
 - [x] Org structure snapshot via CLI: [`list-accounts`](docs/evidence/aws-organization-list-accounts.json) / [`list-organizational-units-for-parent`](docs/evidence/aws-organization-list-ous-root.json) (root level)
-- [ ] VPC peering evidence once the first workload VPC exists
+- [x] `MyWebApp-dev` provisioning: [Account Factory confirmation](docs/evidence/mywebapp-dev-account-factory.png), [`Workloads`/`Dev` OU registration](docs/evidence/ct-workloads-dev-ou-registered.png)
+- [x] VPC peering evidence: [`describe-vpc-peering-connections`](docs/evidence/aws-describe-vpc-peering-networking-hub.json), console screenshots from [the hub](docs/evidence/vpc-peering-active-networking-hub.png) and [the spoke](docs/evidence/vpc-peering-active-mywebapp-dev.png)
 
 ---
 
-> **Phase 1: Foundation — complete. Phase 2: Workloads — in progress**
-> Everything above reflects what's built and verified as of this writing. Open items — inviting the Route 53 account, standing up `Shared Services`, provisioning Dev/Staging/Prod, and building the VPC Peering connections — are tracked in [Status & Progress](#status--progress).
+> **Phase 1: Foundation — complete. Phase 2: Workloads — first account live.**
+> Everything above reflects what's built and verified as of this writing. `MyWebApp-dev` is up, peered, and guardrail-verified — the repeatable pattern for the next one. Open items — inviting the Route 53 account, standing up `Shared Services`, and provisioning Staging/Prod — are tracked in [Status & Progress](#status--progress).

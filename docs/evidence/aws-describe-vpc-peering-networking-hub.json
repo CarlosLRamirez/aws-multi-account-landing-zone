@@ -1,0 +1,48 @@
+{
+    "VpcPeeringConnections": [
+        {
+            "AccepterVpcInfo": {
+                "CidrBlock": "10.0.64.0/20",
+                "CidrBlockSet": [
+                    {
+                        "CidrBlock": "10.0.64.0/20"
+                    }
+                ],
+                "OwnerId": "172644092356",
+                "VpcId": "vpc-0b217d0676a8cb822",
+                "Region": "us-east-1"
+            },
+            "RequesterVpcInfo": {
+                "CidrBlock": "10.0.0.0/21",
+                "CidrBlockSet": [
+                    {
+                        "CidrBlock": "10.0.0.0/21"
+                    }
+                ],
+                "OwnerId": "623609441070",
+                "PeeringOptions": {
+                    "AllowDnsResolutionFromRemoteVpc": false,
+                    "AllowEgressFromLocalClassicLinkToRemoteVpc": false,
+                    "AllowEgressFromLocalVpcToRemoteClassicLink": false
+                },
+                "VpcId": "vpc-021f251e55eebe1cf",
+                "Region": "us-east-1"
+            },
+            "Status": {
+                "Code": "active",
+                "Message": "Active"
+            },
+            "Tags": [
+                {
+                    "Key": "Name",
+                    "Value": "pcx-networking-hub-mywebapp-dev"
+                },
+                {
+                    "Key": "Side",
+                    "Value": "requester"
+                }
+            ],
+            "VpcPeeringConnectionId": "pcx-00a6c63aeeb9f75b7"
+        }
+    ]
+}

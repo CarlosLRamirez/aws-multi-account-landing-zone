@@ -1,0 +1,36 @@
+{
+    "Policies": [
+        {
+            "Id": "p-1h5h22fy",
+            "Arn": "arn:aws:organizations::189053741492:policy/o-r1e3db1vbq/service_control_policy/p-1h5h22fy",
+            "Name": "aws-guardrails-IDyKFG",
+            "Description": "This policy and the contents implement controls, managed by AWS Control Tower. Do not modify, delete, or detach this policy from any target, or attach it to any target, with the AWS Organizations console or APIs. To modify these controls, you must utilize AWS Control Tower.",
+            "Type": "SERVICE_CONTROL_POLICY",
+            "AwsManaged": false
+        },
+        {
+            "Id": "p-FullAWSAccess",
+            "Arn": "arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess",
+            "Name": "FullAWSAccess",
+            "Description": "Allows access to every operation",
+            "Type": "SERVICE_CONTROL_POLICY",
+            "AwsManaged": true
+        },
+        {
+            "Id": "p-i27w4dtu",
+            "Arn": "arn:aws:organizations::189053741492:policy/o-r1e3db1vbq/service_control_policy/p-i27w4dtu",
+            "Name": "aws-guardrails-gDbEiZ",
+            "Description": "This policy and the contents implement controls, managed by AWS Control Tower. Do not modify, delete, or detach this policy from any target, or attach it to any target, with the AWS Organizations console or APIs. To modify these controls, you must utilize AWS Control Tower.",
+            "Type": "SERVICE_CONTROL_POLICY",
+            "AwsManaged": false
+        },
+        {
+            "Id": "p-sqboxile",
+            "Arn": "arn:aws:organizations::189053741492:policy/o-r1e3db1vbq/service_control_policy/p-sqboxile",
+            "Name": "scp-deny-transit-gateway",
+            "Description": "Deny Transit Gateway creation",
+            "Type": "SERVICE_CONTROL_POLICY",
+            "AwsManaged": false
+        }
+    ]
+}
