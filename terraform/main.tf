@@ -61,3 +61,15 @@ provider "aws" {
   profile = "mgmt-admin"
 }
 
+provider "aws" {
+  alias  = "mywebapp_dev"
+  region = "us-east-1"
+
+  assume_role {
+    role_arn     = "arn:aws:iam::${var.mywebapp_dev_account_id}:role/AWSControlTowerExecution"
+    session_name = "terraform-mgmt-mywebapp-dev"
+  }
+
+  profile = "mgmt-admin"
+}
+

@@ -16,6 +16,14 @@
 # ADR-004's "Networking Considerations" section for the NAT Instance vs
 # NAT Gateway decision to make when outbound access is actually needed.
 
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+    }
+  }
+}
+
 data "aws_availability_zones" "available" {
   state = "available"
 }
@@ -87,17 +95,19 @@ resource "aws_subnet" "data" {
 # az_count * slots_per_az, is reserved address space (TBD use / future /23
 # expansion) -- deliberately not provisioned as an aws_subnet.
 
+
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.this.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.this.id
-  }
 
   tags = merge(var.tags, {
     Name = "${var.name}-public-rt"
   })
+}
+
+resource "aws_route" "public_internet_gateway" {
+  route_table_id         = aws_route_table.public.id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = aws_internet_gateway.this.id
 }
 
 resource "aws_route_table_association" "public" {
